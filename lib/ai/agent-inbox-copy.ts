@@ -138,6 +138,83 @@ export const KIND_LABEL = {
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 
+/**
+ * PARA QUEM É CADA AVISO (pedido do dono, 11/11/2026).
+ *
+ * A Central misturava dois públicos: o aviso TÉCNICO (WhatsApp caiu, chave de IA,
+ * material que não entrou, tarefa que falhou) é de quem cuida da plataforma; o
+ * aviso de NEGÓCIO (cliente pediu algo, atendimento esperando decisão, proposta
+ * parada) é da equipe da empresa. Misturados, a equipe da academia lia "evento não
+ * processado" e o operador lia "cliente quer desconto".
+ *
+ * É um mapa puro, SEM coluna nova: o público depende do `kind`, e nenhum kind
+ * muda de público de uma linha para outra. `satisfies Record<InboxKind, ...>`
+ * faz o compilador cobrar um kind novo, como em `KIND_LABEL`.
+ */
+export type AudienciaDoAviso = "equipe" | "operacao";
+
+export const AUDIENCIA_DO_KIND = {
+  // ── Negócio: gente da empresa decide ──
+  handoff: "equipe",
+  case_stale: "equipe",
+  routing_unassigned: "equipe",
+  appointment_outcome_required: "equipe",
+  appointment_recovery_review: "equipe",
+  snooze_expired: "equipe",
+  next_action_ambiguous: "equipe",
+  risk_backlog_seeded: "equipe",
+  reactivation_expired: "equipe",
+  promise_unfulfilled: "equipe",
+  contact_proposal_expired: "equipe",
+  voice_call_missed: "equipe",
+  proposal_expired_notice: "equipe",
+  proposal_acceptance_rate_drop: "equipe",
+  proposal_promised_not_created: "equipe",
+  proposta_travada: "equipe",
+  proposta_pronta_para_revisao: "equipe",
+  jev_pedido_de_humano: "equipe",
+  jev_parar_de_receber: "equipe",
+  org_reativada: "equipe",
+  other: "equipe",
+  // ── Técnico: quem cuida da plataforma resolve ──
+  qr_rescan: "operacao",
+  channel_number_alert: "operacao",
+  channel_template_review: "operacao",
+  canal_mudo_sem_numero: "operacao",
+  job_dead: "operacao",
+  event_dead: "operacao",
+  message_send_stuck: "operacao",
+  capabilities_missing: "operacao",
+  conhecimento_nao_indexado: "operacao",
+  midia_nao_lida: "operacao",
+  budget_exceeded: "operacao",
+  budget_warning: "operacao",
+  judge_unaligned: "operacao",
+  promotion_review: "operacao",
+  followup_dead: "operacao",
+  followup_sem_agente: "operacao",
+  aviso_de_caso_nao_entregue: "operacao",
+  // Kinds que o original acrescentou depois da base: nascem classificados aqui.
+  routing_ia_wait_expired: "equipe",
+  canal_pausado: "operacao",
+  channel_template_review_direct: "operacao",
+  assinatura_desconectada: "operacao",
+  email_de_login_trocado: "operacao",
+  recuperacao_da_queda: "operacao",
+  cobranca: "equipe",
+  cliente_sem_resposta_na_queda: "equipe",
+  task_due: "equipe",
+  task_overdue: "equipe",
+} as const satisfies Record<InboxKind, AudienciaDoAviso>;
+
+/** Kind desconhecido (clone com motor mais novo) cai em "equipe": melhor a equipe ver do que sumir. */
+export function audienciaDoKind(kind: string, refKind?: string | null): AudienciaDoAviso {
+  // `other` é o kind genérico; o que o distingue é a origem. Saúde do número
+  // (go-live, circuito) é assunto de quem cuida da plataforma, não da equipe.
+  if (kind === "other" && refKind === "number_health") return "operacao";
+  return (AUDIENCIA_DO_KIND as Record<string, AudienciaDoAviso>)[kind] ?? "equipe";
+}
+
 export const SEVERITY_LABEL: Record<AgentInboxSeverity, string> = {
   info: "informativo",
   warn: "atenção",

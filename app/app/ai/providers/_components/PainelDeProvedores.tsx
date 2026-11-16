@@ -48,6 +48,7 @@ import { normalizarVoiceId, problemaNoVoiceId } from "@/lib/ai/voz/voice-id";
 
 import { OndeOTextoEProcessado } from "../../_components/OndeOTextoEProcessado";
 import { CartaoDeMapas } from "./CartaoDeMapas";
+import { CartaoSomenteGratuitos } from "./CartaoSomenteGratuitos";
 import { CartaoDoJev, jevNoPonto, useDadosDoJev, type DadosDoJev } from "./CartaoDoJev";
 
 interface Ponto {
@@ -223,6 +224,8 @@ export function PainelDeProvedores() {
 
       <CartaoDoPadrao dados={dados} aoSalvar={carregar} />
       <CartaoDeVoz podeEditar={dados.podeEditar} />
+
+      <CartaoSomenteGratuitos />
 
       <CartaoDoJev dados={jev.dados} erro={jev.erro} recarregar={jev.recarregar} />
 

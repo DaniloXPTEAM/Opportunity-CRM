@@ -531,6 +531,8 @@ export interface ChannelAdapter {
     sessionRef: string;
     recipient: string;
     inboundExternalId: string | null;
+    /** `recording` acende "gravando áudio…" (resposta em áudio); omitido = "digitando…". */
+    modo?: "typing" | "recording";
   }): Promise<void>;
 
   /**

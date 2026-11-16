@@ -114,7 +114,7 @@ export function UsageCharts({ series }: UsageChartsProps) {
       </ChartCard>
 
       {/* AI Cost per day */}
-      <ChartCard title={t("Custo AI / dia (US$)")}>
+      <ChartCard title={t("Custo IA / dia (US$)")}>
         {!hasCost ? (
           <EmptyChart />
         ) : (
@@ -170,7 +170,7 @@ export function UsageCharts({ series }: UsageChartsProps) {
 
       {/* AI Tokens per day — full width */}
       <div className="md:col-span-2">
-        <ChartCard title={t("AI Tokens / dia")}>
+        <ChartCard title={t("IA Tokens / dia")}>
           {!hasTokens ? (
             <EmptyChart />
           ) : (

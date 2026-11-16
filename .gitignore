@@ -209,3 +209,5 @@ caddy-sites/*
 
 # Curso ilustrado — fotos e site gerados (curso/capturar.ts, curso/montar.ts)
 curso/saida/
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

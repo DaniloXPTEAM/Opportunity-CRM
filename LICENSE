@@ -1,6 +1,7 @@
 MIT License
 
 Copyright (c) 2026 Rafael Melgaço
+Copyright (c) 2026 Opportunity Destiny AI (modificações e melhorias)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +20,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+NOTA SOBRE ESTA VERSÃO
+
+Este projeto é uma versão modificada e melhorada do DeskcommCRM, criado por
+Rafael Melgaço (https://github.com/ilpiratacris/WhatsApp-DeskcommCRM), usado
+como base e inspiração. O trabalho original continua sob a licença MIT acima,
+cujo aviso de copyright deve ser mantido. As modificações posteriores são de
+Opportunity Destiny AI.

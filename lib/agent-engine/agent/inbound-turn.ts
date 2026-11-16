@@ -98,6 +98,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
+import { mensagemRecebidaFoiAudio, prepararRespostaEmAudio } from './resposta-em-audio';
 import {
   copiarFotoNoStorage,
   enviarComFotos,
@@ -198,6 +199,7 @@ import {
 import { pruneToolResults, toolPartsAsText, type PruneToolResultsKnobs } from './prune-tool-results';
 import {
   classifyStage,
+  deveClassificarEtapa,
   recordStageDivergenceCandidate,
   renderStageHint,
   type StageClassifierKnobs,
@@ -4979,6 +4981,17 @@ async function executarTurnoDoAgente(
         // ele segue inteiramente síncrono do `checar` até a reserva.
         let fotosDoProduto: FotoParaEnvio[] = [];
         let fotosQueFaltaram = 0;
+        // O cliente abriu o turno com áudio? Pergunta uma vez e lembra.
+        let audioDoClienteP: Promise<boolean> | undefined;
+        const respondeEmAudio = (): Promise<boolean> =>
+          (audioDoClienteP ??=
+            input.inboundMessageId === undefined
+              ? Promise.resolve(false)
+              : mensagemRecebidaFoiAudio(pool, {
+                  tenantId,
+                  conversationId: input.conversationId,
+                  inboundMessageId: input.inboundMessageId,
+                }).catch(() => false));
         // O anexo do material da empresa (#4129), quando a resposta pedir um.
         // Um turno manda UM ou OUTRO — material e produto juntos são recusados
         // antes de reservar, porque as duas listas competem pela legenda.
@@ -5406,9 +5419,23 @@ async function executarTurnoDoAgente(
                       jitter,
                       restantes: () => maxSendsPerTurn - seq,
                       enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
-                      enviarTexto: (texto) =>
-                        enviarVoz(texto) ??
-                        sendInBubbles(texto, {
+                      enviarTexto: async (texto) => {
+                        // Voz configurada do agente (nota de voz) tem precedência.
+                        const voz = enviarVoz(texto);
+                        if (voz !== null) return voz;
+                        // Cliente mandou áudio → responde em áudio (voz Gemini). Qualquer falha
+                        // cai nas bolhas de texto; só `sent`/`already_sent`/`queued` encerram aqui.
+                        if (!preview && (await respondeEmAudio())) {
+                          const audio = await prepararRespostaEmAudio(
+                            { pool, llmCfg: deps.llmCfg, supabase: deps.crmCfg.supabase, log: runLog },
+                            { tenantId, conversationId: input.conversationId, texto },
+                          );
+                          if (audio !== null) {
+                            const r = await enviar('', audio);
+                            if (r.kind === 'sent' || r.kind === 'already_sent' || r.kind === 'queued') return r;
+                          }
+                        }
+                        return sendInBubbles(texto, {
                           enabled: agentConfig?.splitMessages ?? false,
                           maxChars: agentConfig?.splitMaxChars ?? 600,
                           // O teto do turno vale para as bolhas: o que passa dele vai
@@ -5421,7 +5448,8 @@ async function executarTurnoDoAgente(
                           // número) — issue #654. Neste ponto fica só o jitter anti-ban
                           // entre bolhas.
                           send: (bubble) => enviar(bubble),
-                        }),
+                        });
+                      },
                     },
                   );
               });
@@ -6257,8 +6285,24 @@ async function executarTurnoDoAgente(
     // único sinal no meio do caminho. Só em turno que fala com o lead: turno
     // de retaguarda não abre o WhatsApp de ninguém.
     if (channel?.signalTyping && turnoVaiFalarComOLead(liveJob())) {
+      // Cliente mandou áudio => a resposta sai em áudio => "gravando áudio…" em vez de "digitando…".
+      const modoDePresenca: 'typing' | 'recording' =
+        input.inboundMessageId !== undefined && !preview
+          ? await mensagemRecebidaFoiAudio(pool, {
+              tenantId,
+              conversationId: input.conversationId,
+              inboundMessageId: input.inboundMessageId,
+            })
+              .then((ehAudio) => (ehAudio ? 'recording' : 'typing'))
+              .catch(() => 'typing' as const)
+          : 'typing';
       pararDigitando = manterDigitando(
-        () => channel.signalTyping!({ tenantId, conversationId: input.conversationId }),
+        () =>
+          channel.signalTyping!({
+            tenantId,
+            conversationId: input.conversationId,
+            modo: modoDePresenca,
+          }),
         runLog,
       );
     }
@@ -6715,7 +6759,7 @@ async function executarTurnoDoAgente(
     });
     const inicioDosClassificadores = performance.now();
     const [stageResultado, jailbreakVerdict, manipulacaoDoJev] = await Promise.all([
-      deps.knobs.stageClassifier !== undefined && vaiClassificar.estagio
+      deps.knobs.stageClassifier !== undefined && vaiClassificar.estagio && deveClassificarEtapa(skillSignal)
         ? classifyStage(
             pool,
             deps.llmCfg,
@@ -6930,9 +6974,63 @@ async function executarTurnoDoAgente(
     const feriadoBlock = blocoDoFeriado(
       await lerFeriadoDoTurno(pool, tenantId, clock(), fusoDaOrg, runLog),
     );
+    // ── RAG ANTES DO MODELO ───────────────────────────────────────────────────
+    // Medido: com a busca como ferramenta, o modelo gasta uma etapa só para pedir o
+    // material e outra para ler — cada etapa reenvia prompt + ferramentas (~30 s no
+    // total). Aqui a busca roda com o texto do cliente ANTES da 1ª etapa e o
+    // resultado entra no prompt; a ferramenta `search_knowledge` continua disponível
+    // para o que a busca automática não cobrir. Falha, lentidão (teto 6 s) ou nada
+    // achado = bloco vazio: o turno segue exatamente como antes.
+    let materialDeConsultaBlock = '';
+    const textoParaBusca = (currentInboundText ?? '').trim();
+    const fontesDaBusca = agentConfig?.knowledgeSourceIds ?? [];
+    if (
+      preview?.kind !== 'sandbox' &&
+      textoParaBusca.length >= 3 &&
+      (fontesDaBusca.length > 0 || agentConfig?.activeKbVersionId != null)
+    ) {
+      try {
+        const busca = await Promise.race([
+          searchKnowledge(
+            pool,
+            {
+              organizationId: tenantId,
+              knowledgeSourceIds: fontesDaBusca,
+              kbVersionId: agentConfig?.activeKbVersionId ?? null,
+              query: textoParaBusca.slice(0, 500),
+              topK: agentConfig?.ragTopK ?? 5,
+              threshold: agentConfig?.ragSimilarityThreshold ?? 0.4,
+              jobId: job?.id,
+              agentId: agentConfig?.agentId ?? null,
+            },
+            { log: runLog, embed: deps.embed },
+          ),
+          new Promise<null>((resolve) => {
+            const t = setTimeout(() => resolve(null), 6000);
+            t.unref?.();
+          }),
+        ]);
+        if (busca !== null && busca.ok && busca.results.length > 0) {
+          evidenciasComerciais.registrarConhecimento(busca);
+          pendingCitations = citationsFromHits(busca.results);
+          materialDeConsultaBlock =
+            '## Material de consulta (busca automática sobre a última mensagem do cliente)\n' +
+            'Use isto para responder fatos da empresa (preços, serviços, regras). Se não cobrir a pergunta, ' +
+            'chame search_knowledge; se também não achar, diga que não sabe e passe para um humano — nunca invente.\n\n' +
+            busca.results
+              .map((h, i) => `[${i + 1}]${h.source_name ? ` (${h.source_name})` : ''} ${h.content}`)
+              .join('\n\n');
+        }
+      } catch (err) {
+        runLog.warn('busca automática no material falhou (segue sem ela)', {
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+    }
     const openingSuffixes = [
       agoraBlock,
       feriadoBlock,
+      materialDeConsultaBlock,
       matchedSkillsBlock,
       stageHintBlock,
       splitHint,
@@ -7053,7 +7151,9 @@ async function executarTurnoDoAgente(
     // este corpo inteiro. Escoltar aqui deixaria de fora as chamadas de modelo dos
     // auxiliares (`classifyStage`, `maybeCompact`), que rodam ANTES desta e por
     // isso são as que estouram primeiro.
-    const turn = await runModelCall(
+    let turn: Awaited<ReturnType<typeof runModelCall>>;
+    try {
+    turn = await runModelCall(
       pool,
       deps.llmCfg,
       {
@@ -7087,6 +7187,9 @@ async function executarTurnoDoAgente(
       },
       { registry: deps.registry, log: runLog },
     );
+    } finally {
+      pararDigitando();
+    }
 
     if (apresentacaoEncerrouOTurno()) return;
 

@@ -16,7 +16,13 @@ import {
   useUpdateInboxItem,
   type AgentInboxItem,
 } from "@/hooks/ai/useAgentInbox";
-import { kindLabel, SEVERITY_LABEL, type AgentInboxSeverity } from "@/lib/ai/agent-inbox-copy";
+import {
+  audienciaDoKind,
+  kindLabel,
+  SEVERITY_LABEL,
+  type AgentInboxSeverity,
+  type AudienciaDoAviso,
+} from "@/lib/ai/agent-inbox-copy";
 import { linkDePagamentoSeguro } from "@/lib/cobranca/link";
 // Só o TIPO: o módulo é do servidor (logger); o literal abaixo é conferido contra ele.
 import type { REF_DO_AVISO_DE_PARADA } from "@/lib/automation/parada-no-assistido";
@@ -37,6 +43,7 @@ const SEVERITY_VARIANT: Record<AgentInboxSeverity, "info" | "warning" | "error">
 export function AgentInboxList({ canResolve, podeDisparar = false }: { canResolve: boolean; podeDisparar?: boolean }) {
   const t = useT();
   const [tab, setTab] = useState<"open" | "resolved">("open");
+  const [publico, setPublico] = useState<"todos" | AudienciaDoAviso>("todos");
   const { data: cachedData, error, isLoading, isError, refetch, isFetching, podeConsultar } = useAgentInbox(tab);
   const acessoNegado = error instanceof ApiError && (error.status === 401 || error.status === 403);
   const data = acessoNegado ? undefined : cachedData;
@@ -76,6 +83,13 @@ export function AgentInboxList({ canResolve, podeDisparar = false }: { canResolv
     );
   }
 
+  const todos = data?.items ?? [];
+  const contagem = {
+    equipe: todos.filter((i) => audienciaDoKind(i.kind, i.ref_kind) === "equipe").length,
+    operacao: todos.filter((i) => audienciaDoKind(i.kind, i.ref_kind) === "operacao").length,
+  };
+  const itens = publico === "todos" ? todos : todos.filter((i) => audienciaDoKind(i.kind, i.ref_kind) === publico);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -87,7 +101,7 @@ export function AgentInboxList({ canResolve, podeDisparar = false }: { canResolv
             <TabsTrigger value="resolved">{t("Resolvidos")}</TabsTrigger>
           </TabsList>
         </Tabs>
-        {canResolve && tab === "open" && data && data.items.length > 0 ? (
+        {canResolve && tab === "open" && publico === "todos" && data && data.items.length > 0 ? (
           <Button
             size="sm"
             variant="outline"
@@ -98,6 +112,23 @@ export function AgentInboxList({ canResolve, podeDisparar = false }: { canResolv
             {t("Marcar todos resolvidos")}
           </Button>
         ) : null}
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <Tabs value={publico} onValueChange={(v) => setPublico(v as "todos" | AudienciaDoAviso)}>
+          <TabsList>
+            <TabsTrigger value="todos">{t("Todos")} ({todos.length})</TabsTrigger>
+            <TabsTrigger value="equipe">{t("Da equipe")} ({contagem.equipe})</TabsTrigger>
+            <TabsTrigger value="operacao">{t("Técnicos")} ({contagem.operacao})</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <p className="text-xs text-muted-foreground">
+          {publico === "equipe"
+            ? t("Atendimentos, propostas e agenda que pedem uma pessoa da empresa.")
+            : publico === "operacao"
+              ? t("Conexão, chaves e falhas do sistema, para quem cuida da plataforma.")
+              : t("Avisos da equipe e avisos técnicos, juntos.")}
+        </p>
       </div>
 
       {isError ? (
@@ -118,7 +149,7 @@ export function AgentInboxList({ canResolve, podeDisparar = false }: { canResolv
           <Skeleton className="h-16 w-full" />
           <Skeleton className="h-16 w-full" />
         </div>
-      ) : isError && !data ? null : !data || data.items.length === 0 ? (
+      ) : isError && !data ? null : !data || itens.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
           <Bell size={28} className="text-muted-foreground" aria-hidden />
           <p className="text-sm font-medium">
@@ -138,7 +169,7 @@ export function AgentInboxList({ canResolve, podeDisparar = false }: { canResolv
           </p>
         ) : null}
         <ul className="divide-y divide-border rounded-lg border border-border">
-          {data.items.map((item) => (
+          {itens.map((item) => (
             <InboxRow
               key={item.id}
               item={item}

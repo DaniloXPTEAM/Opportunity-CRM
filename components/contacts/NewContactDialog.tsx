@@ -210,6 +210,10 @@ export function NewContactDialog({
    */
   async function salvar(values: FormShape, abrir: boolean) {
     setServerError(null);
+    if (!values.email?.trim() && !values.phone_number?.trim()) {
+      setServerError(t("Preencha pelo menos um identificador (email ou telefone)."));
+      return;
+    }
     // A MESMA normalização da API (lib/contacts/tag-normalizada): o que a ficha
     // grava é o que o filtro `?tag=` casa (issue #1224).
     const tags = normalizarTags([

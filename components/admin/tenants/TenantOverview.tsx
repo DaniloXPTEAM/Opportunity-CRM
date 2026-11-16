@@ -164,7 +164,7 @@ export function TenantOverview({ organization, counts, integrations, cobrancaLig
                 value={formatDate(integrations.nuvemshop_connected_at, tagDoIdioma)}
               />
             )}
-            <InfoRow label="WAHA sessions" value={counts.waha_sessions_count} />
+            <InfoRow label={t("Sessões do WhatsApp")} value={counts.waha_sessions_count} />
           </div>
         </div>
 

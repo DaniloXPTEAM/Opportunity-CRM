@@ -255,6 +255,13 @@ export const AUDIT_ACTIONS = [
   "platform_admin.conversation_viewed",
   "platform_admin.tenants_listed",
   "platform_admin.tenant_viewed",
+  "platform_admin.customer_account_updated",
+  "platform_admin.customer_payment_registered",
+  "platform_admin.customer_note_added",
+  "platform_admin.customer_product_changed",
+  "platform_admin.customer_knowledge_changed",
+  "agenda.aviso_whatsapp_enviado",
+  "agenda.aviso_whatsapp_falhou",
   "tenant.created_by_platform_admin",
   "platform_admin.tenant_health_viewed",
   "platform_admin.impersonate_started",
@@ -736,6 +743,8 @@ export const AUDIT_ACTIONS = [
   // `limit_changed`. O metadata carrega antes/depois dos três campos, então o
   // que mudou está sempre na linha, qualquer que seja o código.
   "ai.budget_limit_changed",
+  "ai.somente_gratuitos_changed",
+  "ai.knowledge_site_read",
   "ai.budget_enforcement_armed",
   "ai.budget_enforcement_disarmed",
   "contact.deleted",
@@ -802,8 +811,6 @@ export const AUDIT_ACTIONS = [
   // "mudaram a configuração" e "mandaram o teste" são perguntas diferentes, e o
   // painel filtra por `action`. SEM o texto e com o destino MASCARADO — o que
   // entra no `api_audit_log` não sai pela cascata de LGPD.
-  "agenda.aviso_whatsapp_enviado",
-  "agenda.aviso_whatsapp_falhou",
   "agenda.aviso_whatsapp_configurado",
   "agenda.aviso_whatsapp_teste",
   // A rodada que AVISOU alguém do próprio compromisso. Mensagem que saiu para o

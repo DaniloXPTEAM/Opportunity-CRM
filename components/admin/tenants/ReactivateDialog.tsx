@@ -85,7 +85,7 @@ export function ReactivateDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {t("Reativar tenant")}
+            {t("Reativar cliente")}
             {/* O alvo da reativação, escrito na linha de cima (#2778). */}
             {displayName ? <span className="font-normal"> {displayName}</span> : null}
           </AlertDialogTitle>

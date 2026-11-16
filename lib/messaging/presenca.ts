@@ -63,6 +63,8 @@ export interface SinalizarDigitandoInput {
    */
   organizationId: string;
   conversationId: string;
+  /** `recording` = "gravando áudio…". Omitido = "digitando…". */
+  modo?: "typing" | "recording";
 }
 
 export async function sinalizarDigitando(
@@ -116,6 +118,7 @@ export async function sinalizarDigitando(
     sessionRef: resolveSessionRef(sessao),
     recipient,
     inboundExternalId: await ultimaMensagemDoCliente(supabase, input),
+    ...(input.modo ? { modo: input.modo } : {}),
   });
 }
 

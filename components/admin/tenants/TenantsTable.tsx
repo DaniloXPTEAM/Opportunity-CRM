@@ -16,6 +16,13 @@ import { Buildings } from "@/lib/ui/icons";
 import type { AdminTenantRow } from "@/hooks/useAdminTenants";
 import { TenantRowActions } from "./TenantRowActions";
 import { useT } from "@/hooks/i18n/useT";
+import {
+  ROTULO_DA_ETAPA,
+  ROTULO_DO_PAGAMENTO,
+  situacaoDaVigencia,
+  type EtapaDoCliente,
+  type PagamentoDoCliente,
+} from "@/lib/admin/conta-do-cliente";
 
 // ---------------------------------------------------------------------------
 // Status badge
@@ -94,7 +101,7 @@ export function TenantsTableSkeleton() {
       <Table>
         <TableHeader>
           <TableRow>
-            {["Slug", t("Nome"), "CNPJ", t("Status"), t("Users"), t("Conversas"), t("Criado em"), ""].map(
+            {[t("Endereço"), t("Nome"), "CNPJ", t("Status"), t("Fase"), t("Pagamento"), t("Vigência"), t("Usuários"), t("Conversas"), t("Criado em"), ""].map(
               (h) => (
                 <TableHead key={h}>{h}</TableHead>
               ),
@@ -104,7 +111,7 @@ export function TenantsTableSkeleton() {
         <TableBody>
           {Array.from({ length: 5 }).map((_, i) => (
             <TableRow key={i}>
-              {Array.from({ length: 8 }).map((__, j) => (
+              {Array.from({ length: 11 }).map((__, j) => (
                 <TableCell key={j}>
                   <Skeleton className="h-4 w-full max-w-[120px]" />
                 </TableCell>
@@ -140,9 +147,9 @@ export function TenantsTable({
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-md border py-16 text-center text-muted-foreground">
         <Buildings size={36} weight="duotone" className="opacity-40" aria-hidden />
-        <p className="text-sm font-medium">{t("Nenhum tenant encontrado")}</p>
+        <p className="text-sm font-medium">{t("Nenhum cliente encontrado")}</p>
         <p className="max-w-xs text-xs opacity-70">
-          {t("Ajuste os filtros ou crie um novo tenant.")}
+          {t("Ajuste os filtros ou crie um novo cliente.")}
         </p>
       </div>
     );
@@ -154,11 +161,14 @@ export function TenantsTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[140px]">Slug</TableHead>
+              <TableHead className="w-[140px]">{t("Endereço")}</TableHead>
               <TableHead>{t("Nome")}</TableHead>
               <TableHead className="w-[130px]">CNPJ</TableHead>
               <TableHead className="w-[110px]">{t("Status")}</TableHead>
-              <TableHead className="w-[70px] text-right">{t("Users")}</TableHead>
+              <TableHead className="w-[120px]">{t("Fase")}</TableHead>
+              <TableHead className="w-[100px]">{t("Pagamento")}</TableHead>
+              <TableHead className="w-[190px]">{t("Vigência")}</TableHead>
+              <TableHead className="w-[70px] text-right">{t("Usuários")}</TableHead>
               <TableHead className="w-[90px] text-right">{t("Conversas")}</TableHead>
               <TableHead className="w-[90px]">{t("Criado em")}</TableHead>
               <TableHead className="w-[124px]">
@@ -176,6 +186,25 @@ export function TenantsTable({
                 </TableCell>
                 <TableCell>
                   <StatusBadge status={row.status} onboardedAt={row.onboarded_at} />
+                </TableCell>
+                <TableCell className="text-xs">
+                  {row.conta ? t(ROTULO_DA_ETAPA[row.conta.stage as EtapaDoCliente] ?? row.conta.stage) : "—"}
+                </TableCell>
+                <TableCell>
+                  {row.conta ? (
+                    <Badge
+                      variant={row.conta.payment_status === "pago" ? "success" : row.conta.payment_status === "atrasado" ? "error" : "warning"}
+                    >
+                      {t(ROTULO_DO_PAGAMENTO[row.conta.payment_status as PagamentoDoCliente] ?? row.conta.payment_status)}
+                    </Badge>
+                  ) : (
+                    "—"
+                  )}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {row.conta
+                    ? situacaoDaVigencia(row.conta.contract_end, row.conta.renewal_notice_days, row.conta.stage as EtapaDoCliente, new Date()).texto
+                    : "—"}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {extractCount(row.user_count)}

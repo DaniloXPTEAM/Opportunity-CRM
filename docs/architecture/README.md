@@ -16,6 +16,12 @@ ser fonte sem ninguém decidir isso.
 
 ## Mapas
 
+Grafo di dipendenze del fork: `pnpm graft:build` genera `graft/` localmente;
+`pnpm graft:check` ne verifica la freschezza. Non sostituisce i contratti JSON
+versionati. Ciclo operativo e ritorno in caso di errore: [runbook Graft](../runbooks/graft.md).
+
+`italiano.architecture.json`: preferência existente → provider → catálogo italiano / datas → interface, com retorno ao seletor. Fonte JSON, sem novo render HTML.
+
 | arquivo | escopo |
 |---|---|
 | `atendimento-alerta-humano-nome-informado.architecture.json` | aviso interno por episódio, reserva sem reenvio incerto, nome selecionado pela ferramenta com escopo inbound e ficha vazia; limites da timeline declarados |
@@ -25,6 +31,8 @@ ser fonte sem ninguém decidir isso.
 | `etiquetas-paginadas.architecture.json` | vocabulário paginado, busca e sugestões nos editores do Inbox |
 | `nomes-internos-das-conexoes.architecture.json` | renomeação interna dos canais — cartões de WhatsApp, parceiro e redes sociais → rota tenant-aware → `channel_sessions.display_name` → cartões e seletores, com auditoria e sem alterar o nome público no provedor |
 | `conversoes-de-anuncios.architecture.json` | Purchase, etapas e LeadSubmitted por clique CTWA; entrega, livro de cliques e reprocessamento |
+| `whatsapp-notes-staging.architecture.json` | tre gruppi approvati → filtro CRM → lettore SSH → archivio privato Taccuino → ricerca; storico, ChatGPT e Hindsight dichiarati separatamente |
+| `conversoes-de-anuncios.architecture.json` | venda, entrega, protocolo assíncrono, pendências e reprocessamento |
 | `prospeccao-nativa.architecture.json` | busca comercial, fila gradual, configuração conversacional persistente, sandbox e assistente de voz opcional |
 | `pre-go-live-whatsapp.architecture.json` | modo de teste por canal (issue #573): configuração administrativa, gate compartilhado, releitura no envio e validação pelo Inbox |
 | `app-da-meta-da-instalacao.architecture.json` | App da Meta da instalação (issue #850, migration 0257) — 10 peças, 12 arestas; a tela `/admin/meta` que grava a chave e mostra o token uma vez, o resolvedor que serve o par inteiro de UMA fonte (banco, com o `.env` de reserva) e por que Conexões só mostra o token quando ele veio do `.env` |

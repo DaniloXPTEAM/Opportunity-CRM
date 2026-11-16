@@ -533,25 +533,13 @@ describe("send_whatsapp_message — postponeUntil (Task 11)", () => {
     // janela —, então a checagem de janela vencia e este caso reprovava com
     // `expected 19 to be 7`. Medido rodando com TZ=Asia/Tokyo.
     //
-    // ⚠️ O QUE ESTE CASO NÃO PROVA, e é maior que ele: `channel_session_warmup`
-    // NÃO TEM ESCRITOR no produto — `grep -rn channel_session_warmup app/ lib/
-    // workers/ scripts/` devolve só o LEITOR (`lib/automation/throttle.ts`) e
-    // este `insert`, que é do próprio teste. O contador que o pacing de verdade
-    // usa é `pacing_ledger` (escrito em `lib/agent-engine/pacing/store.ts`).
-    // Ou seja: `sent` é sempre 0 em produção e o cap diário da automação NUNCA
-    // dispara — um controle que não controla. Este caso exercita o leitor
-    // contra uma tabela semeada à mão, e é isso que ele prova.
-    //
-    // E `checkDailyLimit` ainda calcula "hoje" em UTC e a volta com `setHours`
-    // no fuso do PROCESSO — o mesmo defeito de fuso que a janela acabou de
-    // deixar de ter. Não foi consertado aqui porque ligar a automação ao
-    // `pacing_ledger` muda comportamento anti-ban real e é frente própria; a
-    // asserção abaixo congela o comportamento ATUAL, não o desejado.
+    // O contador é o `pacing_ledger` (o mesmo do agente): 300 envios hoje. O
+    // retry sai da régua única da janela, no fuso do tenant.
     vi.setSystemTime(new Date("2026-07-17T13:00:00Z"));
     sql(`
-      insert into public.channel_session_warmup (channel_session_id, organization_id, day, messages_sent)
-        values ('${SESSION_ID}', '${GOV_ORG}', '2026-07-17', 300)
-        on conflict do nothing;
+      insert into public.pacing_ledger (organization_id, channel_session_id, sent_at)
+        select '${GOV_ORG}', '${SESSION_ID}', '2026-07-17T12:00:00Z'::timestamptz
+        from generate_series(1, 300);
     `);
     const executor = getAction("send_whatsapp_message")!;
     // Contato que PASSA na guarda (#4467): a guarda vem antes da espera, e um
@@ -563,9 +551,15 @@ describe("send_whatsapp_message — postponeUntil (Task 11)", () => {
       template: "x",
     });
     expect(until).not.toBeNull();
-    const next = new Date(until!);
-    expect(next.getHours()).toBe(7);
-    expect(next.getDate()).toBe(18);
+    const noFusoDoTenant = new Date(until!).toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    expect(noFusoDoTenant).toContain("18/07");
+    expect(noFusoDoTenant).toContain("07:");
   });
 });
 

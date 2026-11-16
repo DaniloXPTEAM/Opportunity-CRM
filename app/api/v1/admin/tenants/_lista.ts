@@ -108,6 +108,10 @@ export async function listarTenants(
     .order("id", { ascending: false })
     .limit(limit + 1);
 
+  // A empresa da própria plataforma (a Opportunity) não é cliente de si mesma: ela
+  // trabalha pelo CRM mestre. Marca: organizations.settings.plataforma_propria = true.
+  query = query.or("settings->>plataforma_propria.is.null,settings->>plataforma_propria.neq.true");
+
   if (status === "onboarding") {
     // Estado derivado: ativo no banco, onboarding ainda não concluído.
     query = query.eq("status", "active").is("onboarded_at", null);

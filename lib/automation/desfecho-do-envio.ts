@@ -30,6 +30,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { fraseDaFalhaDeCanal } from "@/lib/channels/frases-de-falha";
+import { registrarEnvioNoLedger } from "@/lib/agent-engine/pacing/ledger-supabase";
 
 /** O subconjunto de `messages` de que a tradução precisa. */
 export interface MensagemEnviada {
@@ -108,8 +109,15 @@ export async function reportarEnvio(
   tipo: string,
   mensagem: MensagemEnviada,
   conversationId: string,
+  channelSessionId?: string,
 ): Promise<ActionResultDetail> {
   const desfecho = desfechoDoEnvio(tipo, mensagem);
+  // Uma linha no ledger por mensagem que SAIU: é o que o teto diário
+  // (`checkDailyLimit`) e o pacing do agente contam. Sem isto o cap da
+  // automação nunca enxergava nenhum envio.
+  if (desfecho.status === "success" && channelSessionId) {
+    await registrarEnvioNoLedger(ctx.admin, ctx.organizationId, channelSessionId);
+  }
   desfecho.detail = { ...(desfecho.detail ?? {}), conversation_id: conversationId };
 
   if (desfecho.status === "failed") {

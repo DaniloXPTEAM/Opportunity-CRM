@@ -66,7 +66,17 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  return ok(page, {
+  // Conta comercial (fase, pagamento, vigência) de cada cliente da página.
+  const { data: contas } = page.length
+    ? await admin
+        .from("platform_customer_accounts")
+        .select("organization_id, stage, payment_status, contract_end, renewal_notice_days")
+        .in("organization_id", page.map((r) => r.id))
+    : { data: [] as Array<{ organization_id: string }> };
+  const porOrg = new Map((contas ?? []).map((c) => [c.organization_id, c]));
+  const enriquecida = page.map((r) => ({ ...r, conta: porOrg.get(r.id) ?? null }));
+
+  return ok(enriquecida, {
     requestId,
     meta: { has_more, cursor: nextCursor },
   });

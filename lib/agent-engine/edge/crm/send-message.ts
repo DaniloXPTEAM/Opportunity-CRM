@@ -168,7 +168,7 @@ export function corpoDoEnvio(
               // manda o PDF como foto — e o WhatsApp não entrega. `kind` é a
               // marca do áudio/imagem do catálogo (apresentação); os dois
               // convivem e `type` tem precedência por ser o mais específico.
-              type: input.media.type ?? input.media.kind ?? 'image',
+              type: input.media.type ?? input.media.kind ?? (input.media.mime.startsWith('audio/') ? 'audio' : 'image'),
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
               ...(input.media.filename ? { media_filename: input.media.filename } : {}),

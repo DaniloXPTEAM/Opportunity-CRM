@@ -479,8 +479,8 @@ describe("a chave é o texto em português, e o português não muda", () => {
     // `lib/i18n/traducoes/<codigo>.json` (o turco); o que reprova é nenhum dos dois.
     const outros = IDIOMAS.filter((i) => i !== "pt-BR");
     for (const idioma of outros) {
-      const comEsse = Object.values(DICIONARIO).filter((v) =>
-        Object.prototype.hasOwnProperty.call(v, idioma),
+      const comEsse = Object.keys(DICIONARIO).filter((chave) =>
+        traduzir(chave, idioma) !== chave,
       );
       const arquivo = join(RAIZ, "lib", "i18n", "traducoes", `${idioma}.json`);
       const noCatalogo = existsSync(arquivo)

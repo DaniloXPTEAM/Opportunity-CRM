@@ -165,17 +165,17 @@ export function NewTenantForm({
         ...(agenciasLigado ? { agencia: values.agencia } : {}),
       });
 
-      toast.success(t("Tenant criado com sucesso!"));
+      toast.success(t("Cliente criado com sucesso!"));
       setCreated(result.data);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === "conflict") {
-          form.setError("slug", { message: t("Este slug já está em uso") });
+          form.setError("slug", { message: t("Este endereço já está em uso") });
           return;
         }
-        toast.error(`${t("Erro ao criar tenant:")} ${err.message}`);
+        toast.error(`${t("Erro ao criar cliente:")} ${err.message}`);
       } else {
-        toast.error(t("Erro inesperado ao criar tenant"));
+        toast.error(t("Erro inesperado ao criar cliente"));
       }
     }
   });

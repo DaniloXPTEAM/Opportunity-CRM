@@ -22,6 +22,10 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { lerEstadoDoPacing } from "@/lib/agent-engine/pacing/ledger-supabase";
+import { dayStartInTz, proximaAberturaDaJanela } from "@/lib/agent-engine/pacing/engine";
+import { knobsDoCanal } from "@/lib/automation/janela-do-canal";
+
 export interface ThrottleVerdict {
   allowed: boolean;
   retry_at?: string;
@@ -41,36 +45,23 @@ export async function checkDailyLimit(
     .maybeSingle();
   const limit = (session as { daily_message_limit?: number } | null)?.daily_message_limit ?? 300;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: warmup } = await admin
-    .from("channel_session_warmup")
-    .select("messages_sent")
-    .eq("channel_session_id", channelSessionId)
-    .eq("organization_id", organizationId)
-    .eq("day", today)
-    .maybeSingle();
-  const sent = (warmup as { messages_sent?: number } | null)?.messages_sent ?? 0;
+  // "Hoje" e o retry valem no FUSO DO TENANT (mesmo knob da janela de envio),
+  // não no UTC do contêiner.
+  const agora = new Date();
+  const knobs = await knobsDoCanal(admin, organizationId, channelSessionId);
+  // Quem conta envio de verdade é o `pacing_ledger` (o mesmo do agente); as
+  // ações de automação gravam nele em `reportarEnvio`.
+  const { sentToday: sent } = await lerEstadoDoPacing(admin, organizationId, channelSessionId, {
+    agora,
+    timezone: knobs.timezone,
+  });
 
   if (sent >= limit) {
-    // ⚠️ RAMO INALCANÇÁVEL HOJE, e as duas coisas erradas nele estão aqui de
-    // propósito — para quem vier reanimar o cap não replantar nenhuma.
-    //
-    // Inalcançável porque `channel_session_warmup` NÃO TEM ESCRITOR no produto:
-    // quem conta envio de verdade é `pacing_ledger` (lib/agent-engine/pacing).
-    // `sent` é sempre 0, então `sent >= limit` nunca é verdade e o cap diário da
-    // automação nunca dispara. Ligar a automação ao ledger muda comportamento
-    // anti-ban real e é frente própria — não foi feito aqui.
-    //
-    // E o `retry_at` abaixo repete, em miniatura, o defeito que esta entrega
-    // veio matar: `setHours` marca a hora no relógio do PROCESSO (UTC no
-    // contêiner), não no fuso do negócio. Quem reanimar isto deve tirar o
-    // instante de `proximaAberturaDaJanela` (lib/agent-engine/pacing/engine),
-    // via `adiarAteAJanelaAbrir` — a régua única.
-    const WINDOW_START_HOUR = 7;
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(WINDOW_START_HOUR, 0, 0, 0);
-    return { allowed: false, retry_at: tomorrow.toISOString(), reason: "daily_limit" };
+    // O `retry_at` vem da régua única da janela (fuso do tenant): abertura da
+    // janela no dia local seguinte, não `setHours` no relógio do processo.
+    const meiaNoiteAmanha = new Date(dayStartInTz(agora, knobs.timezone).getTime() + 25 * 3600_000);
+    const abertura = proximaAberturaDaJanela(dayStartInTz(meiaNoiteAmanha, knobs.timezone), knobs);
+    return { allowed: false, retry_at: abertura.toISOString(), reason: "daily_limit" };
   }
   return { allowed: true };
 }
