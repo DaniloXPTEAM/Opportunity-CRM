@@ -136,7 +136,23 @@ function dubleAdmin(tabelas: Record<string, Linha[]>) {
       is: (coluna: string, valor: unknown) =>
         consulta(tabela, [...predicados, (l) => l[coluna] === valor], ordens, limite),
       or: (expressao: string) =>
-        consulta(tabela, [...predicados, (l) => casaNoOu(expressao, l)], ordens, limite),
+        consulta(
+          tabela,
+          [
+            ...predicados,
+            // A empresa da própria plataforma (settings.plataforma_propria) fica fora da lista de
+            // clientes: o dublê honra a mesma regra do servidor, em vez de tratá-la como filtro de texto.
+            expressao.startsWith("settings->>plataforma_propria")
+              ? (l) => (l.settings as { plataforma_propria?: unknown } | null | undefined)?.plataforma_propria !== true
+              : (l) => casaNoOu(expressao, l),
+          ],
+          ordens,
+          limite,
+        ),
+      // A rota de leitura anexa a conta comercial (`platform_customer_accounts`) depois da lista;
+      // para este teste a tabela vem vazia, e `.in()` só precisa existir.
+      in: (coluna: string, valores: unknown[]) =>
+        consulta(tabela, [...predicados, (l) => valores.includes(l[coluna])], ordens, limite),
       limit: (n: number) => consulta(tabela, predicados, ordens, n),
       order: (coluna: string, opcoes?: { ascending?: boolean }) =>
         consulta(tabela, predicados, [...ordens, { coluna, ascendente: opcoes?.ascending !== false }], limite),
