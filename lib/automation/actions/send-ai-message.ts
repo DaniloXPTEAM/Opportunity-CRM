@@ -373,7 +373,6 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       TIPO,
       message as unknown as MensagemEnviada,
       conversationId,
-      sessionId,
     );
     // O texto gerado entra no detalhe: sem ele, quem lê a Atividade não tem como
     // saber SE a instrução que escreveu produziu a mensagem que queria — e

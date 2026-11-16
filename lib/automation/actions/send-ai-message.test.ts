@@ -72,12 +72,6 @@ vi.mock("@/lib/automation/throttle", () => ({
   checkDailyLimit: vi.fn(async () => ({ allowed: true })),
 }));
 
-// A contagem no ledger é coberta pelo invariante de banco; o dublê de banco
-// deste arquivo só conhece as tabelas da guarda.
-vi.mock("@/lib/agent-engine/pacing/ledger-supabase", () => ({
-  registrarEnvioNoLedger: vi.fn(async () => undefined),
-}));
-
 import { getAction } from "@/lib/automation/actions";
 // Importa a ação pela porta do efeito colateral, igual `register-all.ts`.
 import "@/lib/automation/actions/send-ai-message";

@@ -148,7 +148,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     // O desfecho vem do ESTADO DA MENSAGEM, nunca da ausência de exceção:
     // `sendMessageHandler` marca `failed`/`queued` e devolve normalmente (ver
     // lib/automation/desfecho-do-envio.ts para o defeito medido).
-    return await reportarEnvio(ctx, "send_whatsapp_message", message as unknown as MensagemEnviada, conversationId, sessionId);
+    return await reportarEnvio(ctx, "send_whatsapp_message", message as unknown as MensagemEnviada, conversationId);
   } catch (err) {
     // #3813 — escolha `nao_enviar`: o pulo tem MOTIVO e vira `skipped` (o mesmo
     // canal dos outros pulos: `guarda-do-contato`, `elegibilidade`), não falha.
