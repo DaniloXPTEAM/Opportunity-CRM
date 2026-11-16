@@ -256,6 +256,8 @@ export const AUDIT_ACTIONS = [
   "platform_admin.tenants_listed",
   "platform_admin.tenant_viewed",
   "platform_admin.customer_account_updated",
+  "platform_admin.customer_account_linked",
+  "platform_admin.customer_account_unlinked",
   "platform_admin.customer_payment_registered",
   "platform_admin.customer_note_added",
   "platform_admin.customer_product_changed",

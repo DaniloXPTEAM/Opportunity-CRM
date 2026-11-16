@@ -22024,6 +22024,13 @@ export const DICIONARIO: Traducoes = {
   "o que cada pessoa pode fazer": { es: "lo que cada persona puede hacer" },
   "Sessões do WhatsApp": { es: "Sesiones de WhatsApp" },
   "Gestão de membros, níveis de acesso e atendimento da empresa.": { es: "Gestión de miembros, niveles de acceso y atención de la empresa." },
+  "Comercial": { es: "Comercial" },
+  "Desligar deste card": { es: "Desvincular de esta tarjeta" },
+  "Este card ainda não está ligado a uma empresa-cliente. Escolha qual é para ver e controlar o comercial dela aqui.": { es: "Esta tarjeta aún no está vinculada a una empresa cliente. Elija cuál es para ver y controlar aquí su parte comercial." },
+  "Empresa-cliente": { es: "Empresa cliente" },
+  "Escolha a empresa": { es: "Elija la empresa" },
+  "Ligar a este card": { es: "Vincular a esta tarjeta" },
+  "Custo IA / dia (US$)": { es: "Costo IA / día (US$)" },
 };
 
 /**

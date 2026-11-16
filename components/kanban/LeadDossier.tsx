@@ -24,6 +24,7 @@ import { RevisaoDoDocumento } from "./RevisaoDoDocumento";
 import { ScoreSlot } from "./ScoreSlot";
 import { LeadTimeline } from "./LeadTimeline";
 import { PropostasDoNegocio } from "./PropostasDoNegocio";
+import { ComercialDoCard } from "./ComercialDoCard";
 import { TarefasDoNegocio } from "./TarefasDoNegocio";
 import { OwnerBadge } from "./OwnerBadge";
 import { EtapaNoDossie } from "./EtapaNoDossie";
@@ -472,6 +473,11 @@ export function LeadDossier({
     />
   );
 
+  /* Aba "Comercial" do CRM mestre: some sozinha (null) em todo card que não é do funil de clientes da plataforma. */
+  const comercial = (
+    <ComercialDoCard leadId={lead.id} recolhida={fechadas.has("comercial")} aoAlternar={alternar} />
+  );
+
   /**
    * ⭐ A PÁGINA INTEIRA (#4151).
    *
@@ -528,6 +534,7 @@ export function LeadDossier({
         <div className="grid grid-cols-1 gap-x-6 gap-y-4 lg:grid-cols-2" data-testid="negocio-colunas">
           {/* O que se lê e se preenche. */}
           <div className="flex min-w-0 flex-col gap-4">
+            {comercial}
             {contato}
             {numeros}
             {dadosDoNegocio}
@@ -585,6 +592,7 @@ export function LeadDossier({
         {carimboDoScore}
         {atalhosDoNegocio}
         {conversa}
+        {comercial}
         {contato}
         {numeros}
         {dadosDoNegocio}
