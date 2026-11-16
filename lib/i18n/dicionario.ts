@@ -40,7 +40,6 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 import { TEXTOS_APARENCIA } from "./aparencia";
 import { TEXTOS_CONTRATACAO } from "./contratacao";
 import { TEXTOS_TABELA_DE_VALORES } from "./tabela-de-valores";
-import italiano from "./traducoes/it.json";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
@@ -22041,7 +22040,6 @@ export const DICIONARIO: Traducoes = {
  * tradução parcial não pode deixar a tela PIOR do que estava.
  */
 export function traduzir(texto: string, idioma: Idioma): string {
-  if (idioma === "it") return (italiano as Record<string, string>)[texto] ?? texto;
   if (idioma === "pt-BR") return texto;
   return DICIONARIO[texto]?.[idioma] ?? entradaDoCatalogo(idioma, texto) ?? texto;
 }

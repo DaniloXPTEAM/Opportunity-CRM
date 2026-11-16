@@ -61,7 +61,6 @@ const MARCA = "scavio:";
 const CONECTIVO: Record<Idioma, string> = {
   "pt-BR": "em",
   es: "en",
-  it: "a",
 };
 
 interface BuscaCodificada {

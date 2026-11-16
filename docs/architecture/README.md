@@ -20,7 +20,6 @@ Grafo di dipendenze del fork: `pnpm graft:build` genera `graft/` localmente;
 `pnpm graft:check` ne verifica la freschezza. Non sostituisce i contratti JSON
 versionati. Ciclo operativo e ritorno in caso di errore: [runbook Graft](../runbooks/graft.md).
 
-`italiano.architecture.json`: preferência existente → provider → catálogo italiano / datas → interface, com retorno ao seletor. Fonte JSON, sem novo render HTML.
 
 | arquivo | escopo |
 |---|---|

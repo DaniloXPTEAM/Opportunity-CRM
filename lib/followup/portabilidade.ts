@@ -571,7 +571,6 @@ export function nomeDoImportado(original: string, ocupados: Iterable<string>): s
 const LOCALE_DO_ZOD: Record<Idioma, () => { localeError: z.core.$ZodErrorMap }> = {
   "pt-BR": z.locales.pt,
   es: z.locales.es,
-  it: z.locales.it,
 };
 
 /**

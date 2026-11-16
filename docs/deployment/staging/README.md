@@ -80,7 +80,7 @@ provvisoria e attivare la verifica in due passaggi prima della scansione.
 Onboarding completato dopo conferma
 utente per termini/privacy: `Deskcomm Staging`, fuso `Europe/Rome`, funnel
 `Clienti — test` con sette fasi in italiano; inbox e quadro vuoti verificati.
-L'interfaccia italiana è descritta in [ITALIANO.md](ITALIANO.md). Backup giornalieri,
+Backup giornalieri,
 ripristino completo isolato del database e copia cifrata iniziale fuori server
 verificati nel report WhatsApp. Replica periodica fuori server, SMTP e capacità
 sotto carico restano da configurare/verificare. Ultimo disco libero circa 16 GiB: valutare crescita
