@@ -144,6 +144,8 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "provide_case_update": { tokens: 102, motivo: BASE },
   "send_template": { tokens: 227, motivo: BASE },
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
+  "crm_list_external_mcp_tools": { tokens: 210, motivo: BASE },
+  "crm_call_external_mcp_tool": { tokens: 304, motivo: BASE },
 };
 
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
@@ -157,7 +159,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // no catálogo lido pelo integrador.
 // O total é MEDIDO no merge com a main (31362 = 30724 medidos nela + 638 deste
 // PR, remedido em 2026-11-14), não somado à mão.
-const TETO_TOTAL = 31362;
+const TETO_TOTAL = 31876;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

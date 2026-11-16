@@ -98,6 +98,10 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // das ferramentas de agenda, logo abaixo, descreve.
   crm_enroll_followup_flow: "funil_vem_do_contato",
 
+  // ---- conector MCP externo: não toca funil algum ----
+  // Chama um servidor MCP do próprio cliente (lib/mcp-client); o que ele faz acontece lá,
+  // fora do CRM. Declarada `sem_funil`, e não ausente, pelo mesmo motivo da agenda.
+  crm_call_external_mcp_tool: "sem_funil",
   // ---- agenda: DECLARADAS `sem_funil`, e a declaração é o ponto ----
   //
   // As três operam por `contact_id` (marcar) ou `appointment_id` (remarcar e
