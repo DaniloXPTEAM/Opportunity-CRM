@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,6 +91,7 @@ function Rotulo({ children, ajuda, htmlFor }: { children: string; ajuda?: string
 const CAMPO = "h-9 w-full rounded-md border border-input bg-background px-2 text-sm";
 
 export function CartaoDoCliente({ organizationId }: { organizationId: string }) {
+  const tagDeIdioma = useTagDeIdioma();
   const t = useT();
   const { data, isLoading, isError } = useContaDoCliente(organizationId);
   const escrita = useEscritaDaConta(organizationId);
@@ -351,7 +354,7 @@ export function CartaoDoCliente({ organizationId }: { organizationId: string }) 
                   <span>
                     <span className="font-medium">{centavosParaReais(p.amount_cents)}</span>{" "}
                     <span className="text-xs text-muted-foreground">
-                      {new Date(p.paid_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
+                      {new Date(p.paid_at).toLocaleString(tagDeIdioma, { dateStyle: "short", timeStyle: "short" })}
                       {p.method ? ` · ${p.method}` : ""}
                       {p.reference ? ` · ${p.reference}` : ""}
                       {p.note ? ` · ${p.note}` : ""}
@@ -419,7 +422,7 @@ export function CartaoDoCliente({ organizationId }: { organizationId: string }) 
                 <li key={n.id} className="rounded-md border px-3 py-2 text-sm">
                   <p className="whitespace-pre-wrap">{n.body}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {new Date(n.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
+                    {new Date(n.created_at).toLocaleString(tagDeIdioma, { dateStyle: "short", timeStyle: "short" })}
                   </p>
                 </li>
               ))}

@@ -168,7 +168,7 @@ export function ConhecimentoDoCliente({ organizationId }: { organizationId: stri
           </div>
 
           {modo === "site" ? (
-            <Input placeholder={t("minhaempresa.com.br")} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t("Endereço do site")} />
+            <Input placeholder="www.example.com" value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t("Endereço do site")} />
           ) : null}
           {modo === "arquivo" ? (
             <div className="space-y-1">

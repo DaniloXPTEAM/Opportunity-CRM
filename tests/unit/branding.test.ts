@@ -208,6 +208,12 @@ type EntradaDeMarca = {
 };
 
 const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
+  "lib/ai/rag/ingest/site.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "User-Agent do leitor de site da empresa (RAG): é como o robô se identifica ao site que lê, e o `robots.txt` de quem recebe a visita filtra por esse nome. Não aparece nas telas do CRM.",
+    marcas: ["deskcommbot"],
+  },
   // ─── PROTOCOLO — contrato de fio. Renomear quebra integração alheia. ───
   "lib/ai/pontos/pkce-da-assinatura.ts": {
     categoria: "PROTOCOLO",

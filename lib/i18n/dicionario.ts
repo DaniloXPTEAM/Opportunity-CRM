@@ -22004,7 +22004,6 @@ export const DICIONARIO: Traducoes = {
   "Tudo o que você colocar aqui a Ruby deste cliente passa a consultar: preços, serviços, regras. Cada cliente tem o seu, separado dos demais.": { es: "Todo lo que ponga aquí lo consultará la Ruby de este cliente: precios, servicios, reglas. Cada cliente tiene el suyo, separado de los demás." },
   "materiais ainda não estão ligados": { es: "materiales aún no están conectados" },
   "material ainda não está ligado": { es: "material aún no está conectado" },
-  "minhaempresa.com.br": { es: "miempresa.com.br" },
   "à": { es: "a" },
   "a Ruby marcou um agendamento": { es: "la Ruby agendó una cita" },
   "Responder aqui não chega ao cliente — fale com ele pelo telefone acima ou pela conversa no CRM.": { es: "Responder aquí no llega al cliente — hable con él por el teléfono de arriba o por la conversación en el CRM." },

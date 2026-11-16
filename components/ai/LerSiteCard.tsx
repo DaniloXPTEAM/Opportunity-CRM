@@ -89,7 +89,7 @@ export function LerSiteCard({ onLido }: Props) {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void ler();
                 }}
-                placeholder="minhaempresa.com.br"
+                placeholder="www.example.com"
                 disabled={lendo}
                 inputMode="url"
                 autoComplete="off"
