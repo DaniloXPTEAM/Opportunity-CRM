@@ -147,3 +147,18 @@ export async function prepararRespostaEmAudio(
     return null;
   }
 }
+
+/**
+ * Envia o áudio preparado e só dá o turno por entregue se o canal ACEITOU (`sent`,
+ * `already_sent` ou `queued`). Qualquer outro desfecho devolve `null`, e quem chama
+ * segue pelo texto em bolhas — a resposta em áudio é um extra, nunca a única saída.
+ * Fica aqui, e não no turno, para o call site do `inbound-turn` seguir curto.
+ */
+export async function aceitarEnvioDeAudio<A, R extends { kind: string }>(
+  preparado: A | null,
+  enviar: (audio: A) => Promise<R>,
+): Promise<R | null> {
+  if (preparado === null) return null;
+  const r = await enviar(preparado);
+  return r.kind === 'sent' || r.kind === 'already_sent' || r.kind === 'queued' ? r : null;
+}

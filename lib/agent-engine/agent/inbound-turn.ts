@@ -98,7 +98,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
-import { mensagemRecebidaFoiAudio, prepararRespostaEmAudio } from './resposta-em-audio';
+import { aceitarEnvioDeAudio, mensagemRecebidaFoiAudio, prepararRespostaEmAudio } from './resposta-em-audio';
 import {
   copiarFotoNoStorage,
   enviarComFotos,
@@ -5404,6 +5404,16 @@ async function executarTurnoDoAgente(
                   ...(media && materialApresentado ? { materialId: materialApresentado } : {}),
                 });
               };
+          const tentarRespostaEmAudio = async (texto: string): Promise<ChannelSendResult | null> =>
+            preview || !(await respondeEmAudio())
+              ? null
+              : aceitarEnvioDeAudio(
+                  await prepararRespostaEmAudio(
+                    { pool, llmCfg: deps.llmCfg, supabase: deps.crmCfg.supabase, log: runLog },
+                    { tenantId, conversationId: input.conversationId, texto },
+                  ),
+                  (audio) => enviar('', audio),
+                );
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
               const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seq + 1 }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
               return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
@@ -5419,23 +5429,10 @@ async function executarTurnoDoAgente(
                       jitter,
                       restantes: () => maxSendsPerTurn - seq,
                       enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
-                      enviarTexto: async (texto) => {
-                        // Voz configurada do agente (nota de voz) tem precedência.
-                        const voz = enviarVoz(texto);
-                        if (voz !== null) return voz;
-                        // Cliente mandou áudio → responde em áudio (voz Gemini). Qualquer falha
-                        // cai nas bolhas de texto; só `sent`/`already_sent`/`queued` encerram aqui.
-                        if (!preview && (await respondeEmAudio())) {
-                          const audio = await prepararRespostaEmAudio(
-                            { pool, llmCfg: deps.llmCfg, supabase: deps.crmCfg.supabase, log: runLog },
-                            { tenantId, conversationId: input.conversationId, texto },
-                          );
-                          if (audio !== null) {
-                            const r = await enviar('', audio);
-                            if (r.kind === 'sent' || r.kind === 'already_sent' || r.kind === 'queued') return r;
-                          }
-                        }
-                        return sendInBubbles(texto, {
+                      enviarTexto: async (texto) =>
+                        enviarVoz(texto) ??
+                        (await tentarRespostaEmAudio(texto)) ??
+                        sendInBubbles(texto, {
                           enabled: agentConfig?.splitMessages ?? false,
                           maxChars: agentConfig?.splitMaxChars ?? 600,
                           // O teto do turno vale para as bolhas: o que passa dele vai
@@ -5448,8 +5445,7 @@ async function executarTurnoDoAgente(
                           // número) — issue #654. Neste ponto fica só o jitter anti-ban
                           // entre bolhas.
                           send: (bubble) => enviar(bubble),
-                        });
-                      },
+                        }),
                     },
                   );
               });
@@ -6284,18 +6280,18 @@ async function executarTurnoDoAgente(
     // rodavam sem indicador, e numa resposta de ~1 min o WhatsApp apagava o
     // único sinal no meio do caminho. Só em turno que fala com o lead: turno
     // de retaguarda não abre o WhatsApp de ninguém.
+    // Cliente mandou áudio => a resposta sai em áudio => "gravando áudio…" em vez de "digitando…".
+    const modoDePresenca: 'typing' | 'recording' =
+      channel?.signalTyping && turnoVaiFalarComOLead(liveJob()) && input.inboundMessageId !== undefined && !preview
+        ? await mensagemRecebidaFoiAudio(pool, {
+            tenantId,
+            conversationId: input.conversationId,
+            inboundMessageId: input.inboundMessageId,
+          })
+            .then((ehAudio) => (ehAudio ? 'recording' : 'typing'))
+            .catch(() => 'typing' as const)
+        : 'typing';
     if (channel?.signalTyping && turnoVaiFalarComOLead(liveJob())) {
-      // Cliente mandou áudio => a resposta sai em áudio => "gravando áudio…" em vez de "digitando…".
-      const modoDePresenca: 'typing' | 'recording' =
-        input.inboundMessageId !== undefined && !preview
-          ? await mensagemRecebidaFoiAudio(pool, {
-              tenantId,
-              conversationId: input.conversationId,
-              inboundMessageId: input.inboundMessageId,
-            })
-              .then((ehAudio) => (ehAudio ? 'recording' : 'typing'))
-              .catch(() => 'typing' as const)
-          : 'typing';
       pararDigitando = manterDigitando(
         () =>
           channel.signalTyping!({
@@ -6752,14 +6748,15 @@ async function executarTurnoDoAgente(
     // `classificadores-do-turno.ts`).
     const vaiClassificar = classificadoresDoTurno({
       jobKind: job?.kind ?? null,
-      estagioLigado: deps.knobs.stageClassifier !== undefined,
+      // O sinal de mudança de etapa na mensagem (`deveClassificarEtapa`) entra na DECISÃO, junto das demais.
+      estagioLigado: deps.knobs.stageClassifier !== undefined && deveClassificarEtapa(skillSignal),
       temQuemConfirmeOEstagio: rawTools.update_lead_state !== undefined,
       manipulacaoLigada,
       ultimaMensagemDoCliente: skillSignal,
     });
     const inicioDosClassificadores = performance.now();
     const [stageResultado, jailbreakVerdict, manipulacaoDoJev] = await Promise.all([
-      deps.knobs.stageClassifier !== undefined && vaiClassificar.estagio && deveClassificarEtapa(skillSignal)
+      deps.knobs.stageClassifier !== undefined && vaiClassificar.estagio
         ? classifyStage(
             pool,
             deps.llmCfg,
@@ -7151,9 +7148,7 @@ async function executarTurnoDoAgente(
     // este corpo inteiro. Escoltar aqui deixaria de fora as chamadas de modelo dos
     // auxiliares (`classifyStage`, `maybeCompact`), que rodam ANTES desta e por
     // isso são as que estouram primeiro.
-    let turn: Awaited<ReturnType<typeof runModelCall>>;
-    try {
-    turn = await runModelCall(
+    const turn = await runModelCall(
       pool,
       deps.llmCfg,
       {
@@ -7187,9 +7182,6 @@ async function executarTurnoDoAgente(
       },
       { registry: deps.registry, log: runLog },
     );
-    } finally {
-      pararDigitando();
-    }
 
     if (apresentacaoEncerrouOTurno()) return;
 
