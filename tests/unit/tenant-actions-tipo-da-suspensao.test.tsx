@@ -35,19 +35,19 @@ describe("TenantActions — o tipo da suspensão decide a saída", () => {
   it("⭐ suspensa por cobrança: diz o tipo, esconde 'Reativar tenant' e aponta o card Cobrança", () => {
     render(<TenantActions organization={org("suspended", "cobranca")} counts={COUNTS} />);
     expect(screen.getByTestId("tipo-da-suspensao").textContent).toBe("Suspensa por falta de pagamento");
-    expect(screen.queryByRole("button", { name: "Reativar tenant" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reativar cliente" })).toBeNull();
     expect(screen.getByText("Para reativar, use o card Cobrança: Dar prazo ou Tornar isenta.")).toBeTruthy();
   });
 
   it("suspensão administrativa: diz o tipo e mantém 'Reativar tenant'", () => {
     render(<TenantActions organization={org("suspended", "administrativa")} counts={COUNTS} />);
     expect(screen.getByTestId("tipo-da-suspensao").textContent).toBe("Suspensão administrativa");
-    expect(screen.getByRole("button", { name: "Reativar tenant" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reativar cliente" })).toBeTruthy();
   });
 
   it("ativa: nenhum tipo, e 'Suspender tenant' presente", () => {
     render(<TenantActions organization={org("active")} counts={COUNTS} />);
     expect(screen.queryByTestId("tipo-da-suspensao")).toBeNull();
-    expect(screen.getByRole("button", { name: "Suspender tenant" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Suspender cliente" })).toBeTruthy();
   });
 });

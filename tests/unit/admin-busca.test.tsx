@@ -86,8 +86,8 @@ describe("busca do painel do administrador", () => {
   it("acha tenant pelo nome da tela", async () => {
     const user = userEvent.setup();
     abrir();
-    await user.type(screen.getByRole("combobox"), "tenant");
-    expect(screen.getByRole("option", { name: /Tenants/ })).toBeTruthy();
+    await user.type(screen.getByRole("combobox"), "client");
+    expect(screen.getAllByRole("option", { name: /Clientes/ }).length).toBeGreaterThan(0);
   });
 
   it("não mostra Cobrança com o módulo desligado", async () => {
