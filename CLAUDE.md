@@ -472,3 +472,36 @@ Antes de declarar uma task pronta:
     extensão não autoriza remover nem desligar o que já foi distribuído.
 
 Um staff engineer aprovaria? Se não, itera.
+
+---
+
+## ESTADO DA SESSÃO — 16/11/2026 (retomar daqui; escrito pelo Claude a pedido do dono)
+
+**Pastas e GitHub (o dono quer INDEPENDÊNCIA do projeto original):**
+- **Esta pasta (`c:\w\opportunity-crm`) é a base de trabalho.** Repositório independente: **sem remoto** (`git remote` vazio), branch `main`. Commits: `27aa3d4a8` (original 1.113.0 + trabalho do dono reaplicado) e `1e47442d6` (aba Comercial).
+- A pasta antiga `c:\w\WhatsApp-DeskcommCRM` é só **backup**. Branch `publicar` enviada ao GitHub `opportunitydestinyai/crm` (commit `8e3d706`) como checkpoint; a `main` de lá não foi tocada. Não usar mais.
+- **Falta:** o dono cria um repositório VAZIO novo no GitHub e passa o endereço; aí `git remote add origin <url>` e primeiro push (só com ok escrito).
+- Linhagem: `melgarafael/DeskcommCRM` (v1.70.0, 03/out) → `ilpiratacris` (+italiano, taccuino) → nosso. Agora reaplicado sobre melgarafael v1.113.0 (16/nov). Só 141 tags de versão foram buscadas (sem criar remoto). **LICENSE MIT: manter o nome do autor original.**
+- Regras do dono: NÃO mexer em `c:\w` fora do projeto; NÃO criar pasta sem pedir (a `nova-base` ligada à antiga foi um erro e foi apagada); Higgsfield proibido; destrutivo só com "sim" escrito.
+
+**O que a base nova já traz do original:** voz (Asterisk/ARI, `workers/voice-agent`, ElevenLabs por agente com vozes), Telegram opcional (@BotFather, desligado por padrão), setores (`SectorsClient`), exportar conversa em PDF, mensagem agendada, ações em lote, atendimento conjunto, respostas rápidas, pesquisa de satisfação, aviso de agendamento por WhatsApp (completo: marcação, remarcação, cancelamento, resumo 7h, grupo), "digitando" contínuo, cobrança SaaS (`lib/cobranca`, Stripe/Asaas), prospecção avançada, dados externos, cadências. **Ligações pela Ruby continuam exigindo linha SIP + Asterisk + chave OpenAI** (não há chave configurada).
+
+**Trabalho do dono reaplicado por cima:** CRM mestre (cartão do cliente, conhecimento por cliente), ler o site no RAG, trava "somente gratuitos", resposta em áudio (Gemini, voz Kore, só quando o cliente manda áudio; a voz do original tem precedência), MCP externo, níveis de acesso, Central por público (Da equipe/Técnicos), painel `/admin` em português (menus "Dashboard" e "Platform Admins" ficam em inglês), RAG antes do modelo, classificador de etapa por sinal (`deveClassificarEtapa`, somado a `classificadoresDoTurno` do original), "gravando áudio…". **Descartados por duplicarem o original:** aviso ao agendar e digitando contínuo (usar os do original).
+- **Aba Comercial** (feito, commit `1e47442d6`): seção "Comercial" dentro do dossiê do card (`components/kanban/ComercialDoCard.tsx`), só para platform admin, em card do funil `is_client_pipeline` de org `settings.plataforma_propria`. Rota `app/api/v1/comercial/leads/[leadId]` (liga/desliga card↔empresa). **Migration 9395** (`platform_customer_accounts.lead_id`). Nossas outras migrations foram renumeradas: **9393** (MCP) e **9394** (conta comercial), porque o original já usa 0535/0536. Falta provar pela TELA (nunca foi aberta no navegador).
+
+**Testes (nada está "verde" ainda):**
+- Unitário (rodada de 16/11, log `c:\w\vt2-final.log`): **296 falhas em 40.979 testes, 97 arquivos.** Triagem em andamento: reexecução só dos 97 arquivos (`c:\w\vt5.log`). Muitos eram tempo esgotado por carga. O **italiano já falhava antes da aba**: 3.707 textos sem tradução (`tests/unit/i18n-espanhol-cobre-a-tela.test.ts`). **Decisão pendente: remover o italiano** (recomendado; o dono disse que não o traria, mas que "deixa lá") ou traduzir tudo.
+- `pnpm test:db` na base nova: instalação e atualização do baseline **passaram**; os 673 invariantes (isolamento entre empresas) rodavam ao fim do dia — resultado em `c:\w\tdb2.log`. Precisa de Docker ligado e das tags (já buscadas).
+- `pnpm typecheck` passa.
+
+**BANCO REAL (Supabase `bziwpmlcdupdlfihjryb`) — NÃO TOCADO, AGUARDA O "SIM" DO DONO.** Plano: (1) backup com `pg_dump` (perguntar ONDE guardar; não criar pasta sem avisar); (2) reaplicar `supabase/baseline.sql` em modo update (idempotente; é o que o kit faz); (3) conferir tabelas (`platform_customer_*`, `lead_id`), contagens antes/depois. Risco: o app antigo (`publicar`) usa o mesmo banco; a base nova é superconjunto, mas provar antes num banco de teste.
+
+**A Ruby está PARADA de propósito** (pedido do dono, até terminar tudo): `docker stop deskcomm-waha` feito; app e worker desligados. Para religar: `docker start deskcomm-waha`, Redis (`deskcomm-redis` + `deskcomm-srh`), `pnpm build` (com `NODE_OPTIONS=--max-old-space-size=8192`) + `pnpm start`, `pnpm worker`. O `.env.local` foi copiado para esta pasta (ignorado pelo git). Produção exige `UPSTASH_REDIS_REST_URL/TOKEN` e `WAHA_WEBHOOK_BASE_URL`.
+
+**Perguntas do dono ainda sem resposta fechada (verificar, não assumir):**
+- *Tokens/velocidade:* o original ligou por padrão a parada após a resposta final (`AGENT_STOP_AFTER_FINAL_SEND=on`, avaliado só em gpt/claude), cache de prompt (SÓ Claude via OpenRouter — não vale para Gemini), skills por agente, ferramentas internas sem duplicar as do catálogo. Os nossos ganhos eram em NÚMERO DE CHAMADAS (RAG antes, classificador por sinal), não em tokens. Não medido com Gemini. Regra do dono: a Ruby mestre mantém TODAS as ferramentas; para clientes, escolher só as necessárias.
+- *Voz da Ruby:* a nossa é Gemini TTS fixa (`Kore`); a do original é ElevenLabs com catálogo de vozes por agente (precisa chave ElevenLabs). Conferir qual o dono prefere e se quer escolher entre vozes.
+- *RAG em lotes:* o `rag-indexer` do original indexa em lotes de 100 (menos chamadas), só acelera INDEXAÇÃO, não a resposta. Se resolve a cota do Gemini: **não confirmado** — testar com a chave real; nosso ritmo de 700 ms foi descartado.
+- *Telegram:* o dono já tem um projeto com @BotFather; o módulo do original parece cobrir (conversas privadas no Inbox). Comparar com o projeto dele antes de ligar.
+
+**Pedidos do dono ainda por fazer:** setores com nomes claros (setor do CRM mestre ≠ setor do cliente; tudo da Opportunity é "CRM mestre"); menção em nota interna (já existe no original: conferir); interface simplificada para os CRMs dos clientes (outro nível de acesso e outra tela); **busca por nome nos dois mundos** (o cliente que contatamos e o cliente do nosso cliente); fechamento diário da Ruby ao dono (não existe em nenhum dos dois); cobrança SaaS e prospecção avançada ("depois"); limpeza de lixo meu no repositório antigo: branch `integra-original`, `stash`, `refs/comparar/*`, fotos em `evidence/crm-mestre-2026-11-15/` (só com "sim").
