@@ -85448,6 +85448,14 @@ create view public.mcp_external_connections_safe
 
 revoke all on public.mcp_external_connections_safe from anon;
 
+-- Grants EXPLÍCITOS (a Supabase da nuvem não concede mais por padrão às tabelas novas) e as
+-- três travas do suporte DEPOIS da tabela: `fn_aplicar_travas_de_suporte()` varre o catálogo no
+-- instante em que roda. Mesmo molde de `external_db_connections`.
+revoke all on table public.mcp_external_connections from anon, authenticated, service_role;
+grant select, insert, update, delete on table public.mcp_external_connections to authenticated, service_role;
+grant select on public.mcp_external_connections_safe to authenticated;
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
+
 -- ---- conta comercial do cliente (migration 9394) ----
 --
 -- O CRM mestre (o painel /admin) cadastra CLIENTES. Até aqui o produto só sabia

@@ -79,6 +79,9 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  // CRM mestre (migrations 9393-9395): conta comercial só do servidor (as demais `platform_customer_*` ligam-se pela conta, sem `organization_id`, e a prova de `crm-mestre-isolamento` cobre as quatro) + conexões MCP por organização.
+  { tabela: "platform_customer_accounts", razao: "tests/invariants/crm-mestre-isolamento.test.ts — tabela exclusiva do servidor: RLS de pé, sem policy, sem privilégio para anon/authenticated, service_role com." },
+  { tabela: "mcp_external_connections", razao: "tests/invariants/crm-mestre-isolamento.test.ts — dois tenants: o admin lê e escreve na própria, não enxerga a de outra; agente não escreve." },
   { tabela: "tabela_de_valores_importacoes", razao: "tests/invariants/tabela-de-valores-negociacao.test.ts (migration 9386, #4612) — livro exclusivo do servidor: RLS ligada e NENHUMA policy; membro da própria organização com JWT authenticated recebe permission denied (com controle positivo da mesma sessão lendo tabelas_de_valores); escrita direta de authenticated recusada nas três tabelas da tabela de valores." },
   { tabela: "agencia_clientes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: o cliente não lê o vínculo com a agência (count 0) e, com o módulo desligado, nenhuma policy devolve linha (1 → 0, com controle positivo); a agência só lê/edita o cliente vinculado e nunca a organização irmã." },
   { tabela: "agencia_configuracoes", razao: "tests/invariants/agencias.test.ts — JWT authenticated: com o módulo desligado a configuração da agência some (1 → 0, controle positivo), e a agência não altera a própria autorização nem o limite via PostgREST (42501)." },
