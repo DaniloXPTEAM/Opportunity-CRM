@@ -817,6 +817,7 @@ export class AudioSocketCallBridge {
       case "interrompido":
         // O cliente falou por cima: o que ainda não tocou não vale mais.
         this.outboundQueue = Buffer.alloc(0);
+        this.resto24k = Buffer.alloc(0);
         this.respostaEmCurso = false;
         this.entregarTranscricaoPendente();
         break;

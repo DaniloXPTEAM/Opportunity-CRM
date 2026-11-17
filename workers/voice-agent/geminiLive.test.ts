@@ -74,6 +74,7 @@ describe("ferramentas", () => {
 
 describe("setup", () => {
   it("fala em áudio, com a voz pedida, transcrição nos dois sentidos e as instruções", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a mensagem é JSON livre; o teste só lê campos
     const m = montarSetupGemini({ modelo: "gemini-3.8-live", instrucoes: "Você é a Ruby.", voz: "Kore", ferramentas: [] }) as any;
     expect(m.setup.model).toBe("models/gemini-3.8-live");
     expect(m.setup.generationConfig.responseModalities).toEqual(["AUDIO"]);
@@ -87,6 +88,7 @@ describe("setup", () => {
 
 describe("mensagens que saem", () => {
   it("áudio do cliente: PCM a 16 kHz em base64", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a mensagem é JSON livre; o teste só lê campos
     const m = mensagemDeAudio(pcm(1, 2)) as any;
     expect(m.realtimeInput.audio.mimeType).toBe("audio/pcm;rate=16000");
     expect(Buffer.from(m.realtimeInput.audio.data, "base64")).toEqual(pcm(1, 2));

@@ -234,15 +234,30 @@ export type EventoGemini =
   | { tipo: "uso"; entrada: number; saida: number }
   | { tipo: "aviso_de_fim" };
 
+/** O que lemos de uma mensagem do Google — tudo opcional: campo que não conhecemos é ignorado. */
+interface MensagemDoServidor {
+  setupComplete?: unknown;
+  serverContent?: {
+    interrupted?: boolean;
+    turnComplete?: boolean;
+    modelTurn?: { parts?: unknown };
+    inputTranscription?: { text?: unknown };
+    outputTranscription?: { text?: unknown };
+  };
+  toolCall?: { functionCalls?: unknown };
+  usageMetadata?: { promptTokenCount?: unknown; responseTokenCount?: unknown; candidatesTokenCount?: unknown };
+  goAway?: unknown;
+}
+
 /**
  * Uma mensagem do servidor → zero ou mais eventos. NUNCA lança: mensagem que
  * não entendemos é descartada (o produto não pode cair por um campo novo do
  * Google).
  */
 export function lerMensagemGemini(bruta: string | Buffer): EventoGemini[] {
-  let m: any;
+  let m: MensagemDoServidor | null;
   try {
-    m = JSON.parse(typeof bruta === "string" ? bruta : bruta.toString("utf8"));
+    m = JSON.parse(typeof bruta === "string" ? bruta : bruta.toString("utf8")) as MensagemDoServidor | null;
   } catch {
     return [];
   }
