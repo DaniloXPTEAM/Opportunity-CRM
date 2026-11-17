@@ -210,14 +210,14 @@ export function AuditFiltersAdmin({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <MultiSelectPopover
-        label="Tenants"
+        label="Clientes"
         options={tenantOptions}
         selected={selectedTenants}
         onToggle={toggleTenant}
         onClear={() => onChange({ ...filters, tenant_ids: undefined })}
       />
       <MultiSelectPopover
-        label="Actions"
+        label="Ações"
         options={actionOptions}
         selected={selectedActions}
         onToggle={toggleAction}

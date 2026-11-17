@@ -31,7 +31,7 @@ function montar() {
 }
 
 async function buscar(termo: string) {
-  fireEvent.click(screen.getByRole("button", { name: "Tenants" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clientes" }));
   const campo = await screen.findByPlaceholderText("Buscar...");
   fireEvent.change(campo, { target: { value: termo } });
   return campo;

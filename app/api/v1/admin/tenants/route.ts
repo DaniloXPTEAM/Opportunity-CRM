@@ -7,6 +7,7 @@ import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin, requirePlatformAdm
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { createHash, randomUUID } from "node:crypto";
 import { lerPlano } from "@/lib/cobranca/dono";
 import { moduloLigado } from "@/lib/instalacao/modulos";
@@ -177,6 +178,7 @@ export async function POST(req: NextRequest) {
     return fail("internal_error", "Não foi possível criar a organização", 500, { requestId });
   }
   if (org.created) {
+    await nomearOCrmDoCliente(admin, org.id, org.display_name, requestId);
     await audit({
       action: "tenant.created_by_platform_admin",
       actorUserId: adminCtx.user.id,
@@ -221,4 +223,47 @@ export async function POST(req: NextRequest) {
     },
     { status: 201, requestId },
   );
+}
+
+/**
+ * O CRM DO CLIENTE NASCE COM O NOME DA EMPRESA.
+ *
+ * O dono cadastra só o nome da empresa e o CRM dela já aparece com esse nome
+ * (título da aba, topo), em vez do nome da instalação. O lugar é o de sempre:
+ * `organizations.settings.branding.app_name` — a marca por organização, que o
+ * cliente pode trocar depois em Configurações. Só preenche quando ainda está
+ * vazio, e uma falha aqui NÃO desfaz o cadastro (o CRM segue com o nome da
+ * instalação), mas fica no log em vez de sumir.
+ */
+async function nomearOCrmDoCliente(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  nomeDaEmpresa: string,
+  requestId: string,
+): Promise<void> {
+  try {
+    const nome = (nomeDaEmpresa ?? "").trim();
+    if (nome === "") return;
+    const { data, error } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (error) throw error;
+    const settings = (data?.settings ?? {}) as Record<string, unknown>;
+    const marca = (settings.branding ?? {}) as Record<string, unknown>;
+    const jaTemNome = typeof marca.app_name === "string" && marca.app_name.trim() !== "";
+    if (jaTemNome) return;
+    const { error: erroDeEscrita } = await admin
+      .from("organizations")
+      .update({ settings: { ...settings, branding: { ...marca, app_name: nome } } })
+      .eq("id", organizationId);
+    if (erroDeEscrita) throw erroDeEscrita;
+  } catch (err) {
+    logger.warn("[tenants] o CRM do cliente nasceu sem o nome da empresa na marca", {
+      organizationId,
+      requestId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
