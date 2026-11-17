@@ -31,6 +31,23 @@ import type { Socket } from "node:net";
 import { pcm16ToUlaw, ulawToPcm16 } from "@/lib/voip/ulaw";
 import { somarUsoDaResposta, usoVazio, type UsoDaSessao } from "./uso-da-sessao";
 import { esperaDaVez } from "./espera-da-vez";
+import {
+  DetectorDeFalaDoCliente,
+  JuntaTranscricao,
+  VOZ_GEMINI_PADRAO,
+  cabecalhosGeminiLive,
+  lerMensagemGemini,
+  mensagemDeAudio,
+  mensagemDeTexto,
+  modeloGeminiLive,
+  montarSetupGemini,
+  pcm24kPara8k,
+  pcm8kPara16k,
+  respostaDeFerramenta,
+  urlGeminiLive,
+  type EventoGemini,
+  type FerramentaOpenAi,
+} from "./geminiLive";
 // Só TIPO: a ponte não importa o módulo da agenda em runtime. Quem monta as
 // cinco operações (com o handler de verdade) é o worker — ver
 // `agenda-da-voz.ts` e o comentário de `AudioSocketCallContext.agenda`.
@@ -228,7 +245,13 @@ export interface AudioSocketCallContext {
   voiceSpeed: number;
   /** Modelo Realtime (gpt-realtime, gpt-realtime-2.1, ...) -- ver guardrails-schema.ts. */
   voiceModel?: string;
-  /** Chave da OpenAI pra esta org -- ver resolverChaveOpenAiDaVoz em lib/ai/agents.ts. */
+  /**
+   * Qual serviço de voz em tempo real atende a ligação. Ausente = "openai"
+   * (o comportamento de sempre). "gemini" é o motor gratuito (`./geminiLive.ts`):
+   * a mesma chave Google que a Ruby já usa para escrever.
+   */
+  motor?: "openai" | "gemini";
+  /** Chave do serviço de voz desta org (OpenAI ou Google, conforme `motor`) -- ver lib/ai/agents.ts. */
   apiKey?: string;
   onTranscriptTurn: (turn: { speaker: "agent" | "customer"; text: string }) => void;
   onCallEnded: () => void;
@@ -367,6 +390,15 @@ export class AudioSocketCallBridge {
 
   private readonly realtimeModel: string;
 
+  // ── Motor Gemini Live (ver ./geminiLive.ts) ──
+  private readonly motor: "openai" | "gemini";
+  private readonly juntaTranscricao = new JuntaTranscricao();
+  private readonly detectorDeFala = new DetectorDeFalaDoCliente();
+  /** true entre o 1º som do modelo e o fim do turno dele. */
+  private respostaEmCurso = false;
+  /** Amostras de 24 kHz que sobraram de um trecho (menos de 3 amostras). */
+  private resto24k: Buffer = Buffer.alloc(0);
+
   /**
    * O uso medido da sessão, somado a cada `response.done` — vira a linha de
    * `llm_calls` no fim da ligação (`index.ts`, `finalizeAudioSocketCall`). Ver
@@ -385,12 +417,19 @@ export class AudioSocketCallBridge {
     private socket: Socket,
     private ctx: AudioSocketCallContext,
   ) {
-    this.realtimeModel = ctx.voiceModel ?? REALTIME_MODEL_FALLBACK;
-    const apiKey = ctx.apiKey || process.env.OPENAI_API_KEY!;
-    const realtimeUrl = `wss://api.openai.com/v1/realtime?model=${this.realtimeModel}`;
-    this.realtimeWs = new WebSocket(realtimeUrl, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
+    this.motor = ctx.motor ?? "openai";
+    if (this.motor === "gemini") {
+      // `voiceModel` do agente é nome de modelo da OpenAI: não vale aqui.
+      this.realtimeModel = modeloGeminiLive();
+      this.realtimeWs = new WebSocket(urlGeminiLive(), { headers: cabecalhosGeminiLive(ctx.apiKey ?? "") });
+    } else {
+      this.realtimeModel = ctx.voiceModel ?? REALTIME_MODEL_FALLBACK;
+      const apiKey = ctx.apiKey || process.env.OPENAI_API_KEY!;
+      const realtimeUrl = `wss://api.openai.com/v1/realtime?model=${this.realtimeModel}`;
+      this.realtimeWs = new WebSocket(realtimeUrl, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+    }
 
     // Sem isto o algoritmo de Nagle empaca nossos writes pequenos e
     // frequentes (frames de 323 bytes a cada 20ms) esperando encher um
@@ -448,7 +487,13 @@ export class AudioSocketCallBridge {
       this.recvBuffer = this.recvBuffer.subarray(3 + len);
 
       if (type === FRAME_TYPE.AUDIO) {
-        this.sendAudioToRealtime(pcm16ToUlaw(payload));
+        if (this.motor === "gemini") {
+          // O Gemini recebe PCM16 a 16 kHz; o Asterisk entrega 8 kHz (payload/16 = ms).
+          this.detectorDeFala.ouvir(payload, payload.length / 16);
+          this.sendAudioToRealtime(pcm8kPara16k(payload));
+        } else {
+          this.sendAudioToRealtime(pcm16ToUlaw(payload));
+        }
       } else if (type === FRAME_TYPE.HANGUP) {
         this.handleEnd("hangup frame");
       }
@@ -461,6 +506,7 @@ export class AudioSocketCallBridge {
     if (this.closed) return;
     this.closed = true;
     console.info(`[audiosocket] call=${this.ctx.callId} encerrando (${reason})`);
+    this.entregarTranscricaoPendente(); // o último turno não se perde com o fim da ligação
     this.ctx.onCallEnded();
     this.close();
   }
@@ -472,6 +518,23 @@ export class AudioSocketCallBridge {
       // saber se oferece a tool de RAG ou não.
       const knowledgeSourceIds = await this.ctx.knowledgeSourceIdsPromise;
 
+      if (this.motor === "gemini") {
+        // O áudio só é liberado quando o servidor responde `setupComplete`
+        // (evento "pronto", em tratarEventoGemini) — não logo após o envio.
+        console.info(`[realtime] call=${this.ctx.callId} websocket aberto, enviando setup (gemini live)`);
+        this.realtimeWs.send(
+          JSON.stringify(
+            montarSetupGemini({
+              modelo: this.realtimeModel,
+              instrucoes: this.instrucoesDaSessao(),
+              voz: VOZ_GEMINI_PADRAO,
+              ferramentas: this.montarFerramentas(knowledgeSourceIds),
+            }),
+          ),
+        );
+        return;
+      }
+
       console.info(`[realtime] call=${this.ctx.callId} websocket aberto, enviando session.update`);
       this.realtimeWs.send(
         JSON.stringify({
@@ -480,11 +543,7 @@ export class AudioSocketCallBridge {
             type: "realtime",
             model: this.realtimeModel,
             output_modalities: ["audio"],
-            instructions:
-              this.ctx.agentInstructions +
-              INSTRUCAO_ENCERRAR_CHAMADA +
-              (this.ctx.agenda ? INSTRUCAO_AGENDA : "") +
-              (this.ctx.falaPrimeiro ? INSTRUCAO_FALA_PRIMEIRO : ""),
+            instructions: this.instrucoesDaSessao(),
             audio: {
               input: {
                 format: { type: "audio/pcmu" },
@@ -512,37 +571,7 @@ export class AudioSocketCallBridge {
                 speed: this.ctx.voiceSpeed,
               },
             },
-            tools: [
-              {
-                type: "function",
-                name: ENCERRAR_CHAMADA_TOOL_NAME,
-                description:
-                  "Encerra a ligação. Use depois de dizer a despedida final ao cliente, quando a conversa chegou a uma conclusão natural.",
-                parameters: { type: "object", properties: {}, required: [] },
-              },
-              ...(knowledgeSourceIds.length > 0
-                ? [
-                    {
-                      type: "function" as const,
-                      name: CONSULTAR_CONHECIMENTO_TOOL_NAME,
-                      description:
-                        "Busca na base de conhecimento da empresa (documentos, FAQ, políticas, catálogo) por uma pergunta específica do cliente. Use antes de responder algo que dependa de informação da empresa que você não tem certeza.",
-                      parameters: {
-                        type: "object",
-                        properties: {
-                          pergunta: {
-                            type: "string",
-                            description: "A pergunta ou tópico a buscar na base de conhecimento.",
-                          },
-                        },
-                        required: ["pergunta"],
-                      },
-                    },
-                  ]
-                : []),
-              // Agenda: declarada SÓ com `ctx.agenda` (ver INSTRUCAO_AGENDA).
-              ...(this.ctx.agenda ? AGENDA_TOOLS : []),
-            ],
+            tools: this.montarFerramentas(knowledgeSourceIds),
             tool_choice: "auto",
           },
         }),
@@ -569,6 +598,10 @@ export class AudioSocketCallBridge {
     });
 
     this.realtimeWs.on("message", (raw) => {
+      if (this.motor === "gemini") {
+        for (const ev of lerMensagemGemini(raw.toString())) this.tratarEventoGemini(ev);
+        return;
+      }
       const event = JSON.parse(raw.toString());
 
       if (event.type !== "response.output_audio.delta") {
@@ -595,19 +628,7 @@ export class AudioSocketCallBridge {
           // a ligação nunca desliga sozinha nesses casos: response.done
           // (abaixo) só vê function_call de verdade quando o mecanismo
           // estruturado da Realtime API é usado, que aqui não aconteceu.
-          const narracaoDeEncerrar = new RegExp(ENCERRAR_CHAMADA_TOOL_NAME, "i").test(event.transcript);
-          if (narracaoDeEncerrar) {
-            console.info(`[realtime] call=${this.ctx.callId} modelo narrou a function de encerrar em texto (fallback ativado)`);
-            this.endCallRequested = true;
-          }
-          // A limpeza tira qualquer trecho entre parênteses/chaves que
-          // mencione a tool, mais a forma solta sem wrapper nenhum -- não dá
-          // pra saber de antemão qual sintaxe o modelo vai improvisar.
-          const transcriptLimpo = event.transcript
-            .replace(new RegExp(`[\\(\\{][^)}]*${ENCERRAR_CHAMADA_TOOL_NAME}[^)}]*[\\)\\}]`, "gi"), "")
-            .replace(new RegExp(`functions?\\.${ENCERRAR_CHAMADA_TOOL_NAME}`, "gi"), "")
-            .trim();
-          this.ctx.onTranscriptTurn({ speaker: "agent", text: transcriptLimpo });
+          this.registrarFalaDoAgente(event.transcript);
           break;
         }
         // Fim de um turno do cliente (o VAD fechou o áudio). Chega ANTES da
@@ -679,8 +700,152 @@ export class AudioSocketCallBridge {
     }
     if (this.realtimeWs.readyState !== WebSocket.OPEN) return;
     this.realtimeWs.send(
-      JSON.stringify({ type: "input_audio_buffer.append", audio: ulawChunk.toString("base64") }),
+      JSON.stringify(
+        this.motor === "gemini"
+          ? mensagemDeAudio(ulawChunk) // no motor Gemini o trecho já é PCM16 a 16 kHz
+          : { type: "input_audio_buffer.append", audio: ulawChunk.toString("base64") },
+      ),
     );
+  }
+
+  /** As ferramentas que a sessão oferece ao modelo — as mesmas nos dois motores. */
+  private montarFerramentas(knowledgeSourceIds: string[]): FerramentaOpenAi[] {
+    return [
+      {
+        type: "function",
+        name: ENCERRAR_CHAMADA_TOOL_NAME,
+        description:
+          "Encerra a ligação. Use depois de dizer a despedida final ao cliente, quando a conversa chegou a uma conclusão natural.",
+        parameters: { type: "object", properties: {}, required: [] },
+      },
+      ...(knowledgeSourceIds.length > 0
+        ? [
+            {
+              type: "function" as const,
+              name: CONSULTAR_CONHECIMENTO_TOOL_NAME,
+              description:
+                "Busca na base de conhecimento da empresa (documentos, FAQ, políticas, catálogo) por uma pergunta específica do cliente. Use antes de responder algo que dependa de informação da empresa que você não tem certeza.",
+              parameters: {
+                type: "object",
+                properties: {
+                  pergunta: {
+                    type: "string",
+                    description: "A pergunta ou tópico a buscar na base de conhecimento.",
+                  },
+                },
+                required: ["pergunta"],
+              },
+            },
+          ]
+        : []),
+      // Agenda: declarada SÓ com `ctx.agenda` (ver INSTRUCAO_AGENDA).
+      ...(this.ctx.agenda ? (AGENDA_TOOLS as unknown as FerramentaOpenAi[]) : []),
+    ];
+  }
+
+  private instrucoesDaSessao(): string {
+    return (
+      this.ctx.agentInstructions +
+      INSTRUCAO_ENCERRAR_CHAMADA +
+      (this.ctx.agenda ? INSTRUCAO_AGENDA : "") +
+      (this.ctx.falaPrimeiro ? INSTRUCAO_FALA_PRIMEIRO : "")
+    );
+  }
+
+  /**
+   * A fala do agente já em texto: detecta e limpa a "narração" da function de
+   * encerrar (o modelo às vezes ESCREVE o nome da tool em vez de chamá-la) e
+   * entrega o turno ao CRM. Comum aos dois motores.
+   */
+  private registrarFalaDoAgente(transcript: string) {
+    const narracaoDeEncerrar = new RegExp(ENCERRAR_CHAMADA_TOOL_NAME, "i").test(transcript);
+    if (narracaoDeEncerrar) {
+      console.info(`[realtime] call=${this.ctx.callId} modelo narrou a function de encerrar em texto (fallback ativado)`);
+      this.endCallRequested = true;
+    }
+    // A limpeza tira qualquer trecho entre parênteses/chaves que mencione a
+    // tool, mais a forma solta sem wrapper nenhum -- não dá pra saber de
+    // antemão qual sintaxe o modelo vai improvisar.
+    const transcriptLimpo = transcript
+      .replace(new RegExp(`[\\(\\{][^)}]*${ENCERRAR_CHAMADA_TOOL_NAME}[^)}]*[\\)\\}]`, "gi"), "")
+      .replace(new RegExp(`functions?\\.${ENCERRAR_CHAMADA_TOOL_NAME}`, "gi"), "")
+      .trim();
+    this.ctx.onTranscriptTurn({ speaker: "agent", text: transcriptLimpo });
+  }
+
+  /** Motor Gemini: entrega o que foi dito até agora (cliente primeiro, depois o agente). */
+  private entregarTranscricaoPendente() {
+    for (const turno of this.juntaTranscricao.fechar()) {
+      if (turno.speaker === "customer") this.ctx.onTranscriptTurn({ speaker: "customer", text: turno.text });
+      else this.registrarFalaDoAgente(turno.text);
+    }
+  }
+
+  /** O modelo começou a responder: conta o turno do cliente se ele falou antes. */
+  private iniciarRespostaDoModelo() {
+    if (this.respostaEmCurso) return;
+    this.respostaEmCurso = true;
+    this.isTalkspurtStart = true;
+    if (this.detectorDeFala.fecharTurno()) this.falasDoCliente += 1;
+  }
+
+  private tratarEventoGemini(ev: EventoGemini) {
+    switch (ev.tipo) {
+      case "pronto": {
+        console.info(`[realtime] call=${this.ctx.callId} setup completo (gemini live)`);
+        this.realtimeReady = true;
+        // Ligação recebida: a IA abre a conversa. Vai ANTES do áudio acumulado,
+        // pelo mesmo motivo do motor OpenAI (duas respostas ao mesmo tempo).
+        if (this.ctx.falaPrimeiro) {
+          console.info(`[realtime] call=${this.ctx.callId} ligação recebida: IA abre a conversa`);
+          this.realtimeWs.send(JSON.stringify(mensagemDeTexto("A ligação foi atendida. Cumprimente agora.")));
+        }
+        for (const chunk of this.preOpenAudioBuffer) this.sendAudioToRealtime(chunk);
+        this.preOpenAudioBuffer = [];
+        break;
+      }
+      case "audio":
+        this.iniciarRespostaDoModelo();
+        this.sendAudioToAsterisk(ev.pcm24k);
+        break;
+      case "fala_do_cliente":
+        this.juntaTranscricao.clienteDisse(ev.texto);
+        break;
+      case "fala_do_agente":
+        this.juntaTranscricao.agenteDisse(ev.texto);
+        break;
+      case "interrompido":
+        // O cliente falou por cima: o que ainda não tocou não vale mais.
+        this.outboundQueue = Buffer.alloc(0);
+        this.respostaEmCurso = false;
+        this.entregarTranscricaoPendente();
+        break;
+      case "turno_completo":
+        this.respostaEmCurso = false;
+        this.entregarTranscricaoPendente();
+        break;
+      case "ferramenta": {
+        this.iniciarRespostaDoModelo();
+        if (ev.nome === ENCERRAR_CHAMADA_TOOL_NAME) {
+          // Sem resposta à ferramenta: o áudio pendente drena e o pacer desliga.
+          console.info(`[realtime] call=${this.ctx.callId} agente pediu pra encerrar a chamada`);
+          this.endCallRequested = true;
+          break;
+        }
+        this.pendingFunctionCalls.set(ev.id, ev.nome);
+        const argsJson = JSON.stringify(ev.args);
+        if (ev.nome === CONSULTAR_CONHECIMENTO_TOOL_NAME) void this.handleKnowledgeQuery(ev.id, argsJson);
+        else if (NOMES_DE_AGENDA.has(ev.nome)) void this.handleAgendaCall(ev.nome, ev.id, argsJson);
+        else this.responderFunctionCall(ev.id, "Ferramenta desconhecida.");
+        break;
+      }
+      case "uso":
+        // Gemini Live gratuito: sem tarifa, sem linha de custo. O modelo vai no registro da chamada.
+        break;
+      case "aviso_de_fim":
+        console.warn(`[realtime] call=${this.ctx.callId} o Google avisou que vai encerrar a sessão`);
+        break;
+    }
   }
 
   /**
@@ -725,6 +890,13 @@ export class AudioSocketCallBridge {
    */
   private responderFunctionCall(callId: string, output: string) {
     if (this.realtimeWs.readyState !== WebSocket.OPEN) return;
+    if (this.motor === "gemini") {
+      // Gemini: a resposta da ferramenta basta, ele continua falando sozinho.
+      const nome = this.pendingFunctionCalls.get(callId) ?? "";
+      this.pendingFunctionCalls.delete(callId);
+      this.realtimeWs.send(JSON.stringify(respostaDeFerramenta(callId, nome, output)));
+      return;
+    }
     this.realtimeWs.send(
       JSON.stringify({
         type: "conversation.item.create",
@@ -855,7 +1027,19 @@ export class AudioSocketCallBridge {
       this.outboundFramesLogged = true;
       console.info(`[audiosocket] call=${this.ctx.callId} primeiro trecho de resposta enfileirado (pacing a 20ms/frame)`);
     }
-    this.outboundQueue = Buffer.concat([this.outboundQueue, ulawToPcm16(ulawChunk)]);
+    // Motor Gemini devolve PCM16 a 24 kHz; o OpenAI devolve μ-law a 8 kHz.
+    let pcm8k: Buffer;
+    if (this.motor === "gemini") {
+      // 3 amostras de 2 bytes viram 1: o que sobra do trecho vai para o próximo,
+      // senão cada trecho de tamanho "quebrado" perde amostras e a voz distorce.
+      const junto = Buffer.concat([this.resto24k, ulawChunk]);
+      const util = junto.length - (junto.length % 6);
+      this.resto24k = junto.subarray(util);
+      pcm8k = pcm24kPara8k(junto.subarray(0, util));
+    } else {
+      pcm8k = ulawToPcm16(ulawChunk);
+    }
+    this.outboundQueue = Buffer.concat([this.outboundQueue, pcm8k]);
   }
 
   close() {

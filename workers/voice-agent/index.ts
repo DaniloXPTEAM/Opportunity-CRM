@@ -444,6 +444,7 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     voiceSpeed: agent.voiceSpeed,
     voiceModel: agent.voiceModel,
     apiKey: agent.apiKey,
+    motor: agent.motor,
     onTranscriptTurn: (turn) => appendAudioSocketTranscriptTurn(uuid, turn),
     onCallEnded: () => finalizeAudioSocketCall(uuid),
     // Recebida: quem atende fala primeiro. Feita por nós: quem atende diz "alô".

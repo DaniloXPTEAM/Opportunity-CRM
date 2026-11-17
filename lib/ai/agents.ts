@@ -26,6 +26,8 @@ export interface VoiceAgentConfig {
    * Credenciais pra esta org, ou env OPENAI_API_KEY do servidor.
    */
   apiKey: string;
+  /** Serviço de voz em tempo real que atende a ligação — ver `resolverMotorDeVoz`. */
+  motor: "openai" | "gemini";
 }
 
 /**
@@ -38,14 +40,14 @@ export interface VoiceAgentConfig {
  * chaves cadastradas e nenhuma escolha explícita, variar sozinho no dia em que
  * alguém cadastra uma segunda é pior que sempre usar a mesma.
  */
-async function resolverChaveOpenAiDaVoz(organizationId: string): Promise<string> {
+async function resolverChaveDoProvedor(organizationId: string, provider: "openai" | "google"): Promise<string> {
   try {
     const admin = createAdminClient();
     const { data } = await admin
       .from("ai_provider_credentials")
       .select("api_key_encrypted, api_key_iv, api_key_tag")
       .eq("organization_id", organizationId)
-      .eq("provider", "openai")
+      .eq("provider", provider)
       .eq("is_active", true)
       .not("validated_at", "is", null)
       .order("created_at", { ascending: true })
@@ -64,7 +66,25 @@ async function resolverChaveOpenAiDaVoz(organizationId: string): Promise<string>
     // aconteceu no INFO deste arquivo se aplicável; não vale a pena arriscar
     // ecoar detalhe de credencial no log do worker.
   }
-  return process.env.OPENAI_API_KEY ?? "";
+  return provider === "openai" ? (process.env.OPENAI_API_KEY ?? "") : "";
+}
+
+/**
+ * QUAL SERVIÇO DE VOZ ATENDE A LIGAÇÃO (e com que chave).
+ *
+ * Regra do produto: 100% gratuito. A OpenAI Realtime é paga, então só é usada
+ * quando alguém JÁ cadastrou uma chave OpenAI (ou pôs OPENAI_API_KEY no servidor)
+ * — quem tem, continua exatamente como era. Sem ela, a voz vai para o Gemini
+ * Live com a mesma chave Google com que a Ruby já escreve (ver
+ * `workers/voice-agent/geminiLive.ts`). Sem nenhuma das duas, a chave vem vazia e
+ * a ligação falha na abertura, como antes.
+ */
+async function resolverMotorDeVoz(organizationId: string): Promise<{ motor: "openai" | "gemini"; apiKey: string }> {
+  const openai = await resolverChaveDoProvedor(organizationId, "openai");
+  if (openai) return { motor: "openai", apiKey: openai };
+  const google = await resolverChaveDoProvedor(organizationId, "google");
+  if (google) return { motor: "gemini", apiKey: google };
+  return { motor: "openai", apiKey: "" };
 }
 
 export async function getActiveVoiceAgent(organizationId: string): Promise<VoiceAgentConfig | null> {
@@ -86,6 +106,7 @@ export async function getActiveVoiceAgent(organizationId: string): Promise<Voice
   });
   const cfg = cfgParsed.success ? cfgParsed.data : AGENT_CONFIG_DEFAULTS;
 
+  const { motor, apiKey } = await resolverMotorDeVoz(organizationId);
   return {
     id: data.id,
     systemPrompt: data.system_prompt,
@@ -95,6 +116,7 @@ export async function getActiveVoiceAgent(organizationId: string): Promise<Voice
     agendaNaLigacao: cfg.agenda_na_ligacao,
     ragTopK: cfg.rag_top_k,
     ragSimilarityThreshold: cfg.rag_similarity_threshold,
-    apiKey: await resolverChaveOpenAiDaVoz(organizationId),
+    apiKey,
+    motor,
   };
 }
