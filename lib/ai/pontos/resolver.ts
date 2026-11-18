@@ -414,6 +414,23 @@ export interface ModeloDoCatalogoEconomico {
  *   o custo sair null e a chamada some do teto. Vem de quem chama para este
  *   módulo seguir puro; ausente = sem essa restrição.
  */
+/**
+ * MODELOS QUE O PROVEDOR JÁ NÃO ATENDE — fora da escolha do econômico.
+ *
+ * Medido em 17/11/2026 com uma chave Google real: `gemini-2.5-flash-lite`, `gemini-2.5-flash` e
+ * `gemini-2.0-flash` respondem 404 ("no longer available"). Eles ainda estão no catálogo e a
+ * sincronização os "ressuscita" enquanto a origem os listar, então marcar `deprecated_at` no banco
+ * não dura — e por serem os mais baratos, eram ESCOLHIDOS como econômicos: toda chamada de
+ * classificador tentava um modelo morto, tomava o 404 e repetia no modelo de reserva (perda de
+ * ~0,4 s em cerca de 1 chamada auxiliar em cada 10). Só afeta a escolha automática: o modelo que a
+ * pessoa escolheu no agente nunca passa por aqui.
+ */
+export const MODELOS_APOSENTADOS_NO_PROVEDOR: ReadonlySet<string> = new Set([
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+]);
+
 export function escolherModeloEconomico(
   catalogo: readonly ModeloDoCatalogoEconomico[],
   provider: string,
@@ -435,6 +452,7 @@ export function escolherModeloEconomico(
   const exigePrecoNoMotor = temPrecoNoMotor !== undefined && temPrecoNoMotor(modeloAtual);
   const candidatos = doProvedor
     .filter((m) => habilitados.length === 0 || habilitados.includes(m.model_id))
+    .filter((m) => !MODELOS_APOSENTADOS_NO_PROVEDOR.has(m.model_id))
     .filter((m) => !exigePrecoNoMotor || temPrecoNoMotor(m.model_id))
     .sort(
       (a, b) =>

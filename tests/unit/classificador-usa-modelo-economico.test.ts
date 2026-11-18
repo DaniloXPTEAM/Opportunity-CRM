@@ -21,6 +21,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   decidirBinding,
   escolherModeloEconomico,
+  MODELOS_APOSENTADOS_NO_PROVEDOR,
   type EntradaDaDecisao,
   type ModeloDoCatalogoEconomico,
 } from "@/lib/ai/pontos/resolver";
@@ -55,6 +56,8 @@ const CATALOGO = [
   m("google", "gemini-3.5-flash", 150, 900),
   m("google", "gemini-2.0-flash", 10, 40),
   m("google", "gemini-2.5-flash-lite", 10, 40),
+  m("google", "gemini-3.1-flash-lite", 25, 150),
+  m("google", "gemini-3.5-flash-lite", 30, 250),
 ];
 
 describe("escolherModeloEconomico", () => {
@@ -72,7 +75,17 @@ describe("escolherModeloEconomico", () => {
     // luna (20/120) vence nano (20/125) pela saída.
     expect(escolherModeloEconomico(CATALOGO, "openai", "gpt-5.6-terra")).toBe("gpt-5.6-luna");
     // Preço idêntico: o id em ordem decrescente — a versão mais nova.
-    expect(escolherModeloEconomico(CATALOGO, "google", "gemini-3.5-flash")).toBe("gemini-2.5-flash-lite");
+    const empate = [m("openai", "gpt-a", 20, 120), m("openai", "gpt-b", 20, 120), m("openai", "gpt-grande", 200, 1000)];
+    expect(escolherModeloEconomico(empate, "openai", "gpt-grande")).toBe("gpt-b");
+  });
+
+  it("NUNCA escolhe modelo que o provedor já aposentou (404 em toda chamada de classificador)", () => {
+    // `gemini-2.0-flash` e `gemini-2.5-flash-lite` são os mais baratos do catálogo e já não respondem:
+    // a escolha cai no mais barato que ainda atende.
+    expect(escolherModeloEconomico(CATALOGO, "google", "gemini-3.5-flash")).toBe("gemini-3.1-flash-lite");
+    for (const aposentado of MODELOS_APOSENTADOS_NO_PROVEDOR) {
+      expect(escolherModeloEconomico(CATALOGO, "google", "gemini-3.5-flash")).not.toBe(aposentado);
+    }
   });
 
   it("não troca quando o agente já está no modelo mais barato", () => {
