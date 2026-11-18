@@ -128,10 +128,11 @@ export function parseJailbreakClassification(text: string): JailbreakClassificat
  * Sem ele, uma chamada que o provedor deixa pendurada segura o turno inteiro: medido em
  * 17/11/2026, `jailbreak_detect` levou 143 s (devolvendo OK no fim) e a resposta ao cliente
  * demorou ~3 min — o classificador é advisório e a resposta dele é uma linha de JSON, que
- * normalmente volta em 0,5–2 s. Estourar o teto cai no MESMO degrade da falha do
+ * normalmente volta em 0,5–2 s (mediana medida: 1,3 s; no plano grátis do Gemini 3 de 24 chamadas
+ * passaram de 10 s, e por isso o teto é 15 s, para não cortar o sinal sem necessidade). Estourar o teto cai no MESMO degrade da falha do
  * fornecedor (`falhou: true`, turno segue sem o sinal), nunca em bloqueio.
  */
-export const JAILBREAK_TIMEOUT_MS = 10_000;
+export const JAILBREAK_TIMEOUT_MS = 15_000;
 
 export async function classifyJailbreak(
   db: pg.Pool,
