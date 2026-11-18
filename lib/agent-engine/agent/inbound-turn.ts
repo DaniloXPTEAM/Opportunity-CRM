@@ -12,7 +12,8 @@ import {
   type TurnPreview,
 } from './preview';
 import { etiquetarProdutoAposEnvio } from './etiqueta-apos-envio';
-import { textosDoClienteNoHistorico } from './pedido-de-audio';
+import { lerPedidoDeAudio, textosDoClienteNoHistorico } from './pedido-de-audio';
+import { tirarMarcadorDeMidia } from './marcador-de-midia';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -98,7 +99,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
-import { aceitarEnvioDeAudio, mensagemRecebidaFoiAudio, prepararRespostaEmAudio } from './resposta-em-audio';
+import { aceitarEnvioDeAudio, decidirRespostaEmAudio, mensagemRecebidaFoiAudio, prepararRespostaEmAudio } from './resposta-em-audio';
 import {
   copiarFotoNoStorage,
   enviarComFotos,
@@ -4991,7 +4992,17 @@ async function executarTurnoDoAgente(
                   tenantId,
                   conversationId: input.conversationId,
                   inboundMessageId: input.inboundMessageId,
-                }).catch(() => false));
+                })
+                  .catch(() => false)
+                  // Quem PEDE áudio por escrito também recebe áudio (e "prefiro texto" vence).
+                  .then((foiAudio) =>
+                    decidirRespostaEmAudio(
+                      foiAudio,
+                      lerPedidoDeAudio(
+                        textosDoClienteNoHistorico(openingContext?.context?.messages ?? [], currentInboundText),
+                      ),
+                    ),
+                  ));
         // O anexo do material da empresa (#4129), quando a resposta pedir um.
         // Um turno manda UM ou OUTRO — material e produto juntos são recusados
         // antes de reservar, porque as duas listas competem pela legenda.
@@ -5416,7 +5427,7 @@ async function executarTurnoDoAgente(
                 );
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
               const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seq + 1 }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
-              return enviarComSaidaConfiguravel(saida, finalBody, (finalBody) => {
+              return enviarComSaidaConfiguravel(saida, tirarMarcadorDeMidia(finalBody), (finalBody) => {
                   corposEnviados.push(finalBody);
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
                   // medido ANTES DE CADA FOTO, depois do texto. O material da

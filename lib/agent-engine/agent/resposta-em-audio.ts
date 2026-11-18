@@ -18,6 +18,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { resolveOrgLlmConfig, type LlmEdgeConfig } from '../edge/llm/credentials';
 
+import type { PedidoDeCanal } from './pedido-de-audio';
+
+/**
+ * A resposta deste turno sai em ÁUDIO? Quem manda áudio recebe áudio (espelhar),
+ * e quem PEDE por escrito ("manda em áudio") também — antes só valia o espelho, e
+ * a pessoa que digitava o pedido recebia texto com a etiqueta interna `[audio]`.
+ * "Prefiro texto" ganha de tudo: é a última instrução de canal da pessoa.
+ */
+export function decidirRespostaEmAudio(clienteMandouAudio: boolean, pedido: PedidoDeCanal): boolean {
+  if (pedido === 'texto') return false;
+  if (pedido === 'audio') return true;
+  return clienteMandouAudio;
+}
+
 export const MODELO_DE_VOZ = 'gemini-2.5-flash-preview-tts';
 export const VOZ_PADRAO = 'Kore';
 /** Acima disto o áudio fica longo demais para uma conversa: vai texto. */
