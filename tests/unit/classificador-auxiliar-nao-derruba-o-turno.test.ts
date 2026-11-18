@@ -114,6 +114,37 @@ describe("classificador anti-jailbreak — advisório de verdade", () => {
     );
   });
 
+  it("a chamada leva um TETO de tempo (143 s pendurado = 3 min até a resposta)", async () => {
+    chamada.mockResolvedValue({ result: { text: '{"flag":false,"level":"none","reason":null}' } } as never);
+    const { log } = logSpy();
+
+    await classifyJailbreak(db, cfg, ids, { message: "oi" }, { log });
+
+    // runModelCall(db, cfg, ENTRADA, deps): o teto viaja na entrada
+    const entrada = chamada.mock.calls[0]![2] as { abortSignal?: AbortSignal };
+    expect(entrada.abortSignal).toBeInstanceOf(AbortSignal);
+    expect(entrada.abortSignal!.aborted).toBe(false); // ainda dentro do teto
+  });
+
+  it("estourar o teto degrada como falha do fornecedor — o turno segue sem o sinal", async () => {
+    // O seam real lança quando o sinal aborta; aqui a chamada fica pendurada até o
+    // sinal do teto disparar, como o provedor que não responde.
+    chamada.mockImplementation(
+      (_db, _cfg, entrada) =>
+        new Promise((_ok, falha) => {
+          (entrada as { abortSignal: AbortSignal }).abortSignal.addEventListener("abort", () =>
+            falha(new Error("TimeoutError: The operation was aborted due to timeout")),
+          );
+        }) as never,
+    );
+    const { log, warns } = logSpy();
+
+    const veredito = await classifyJailbreak(db, cfg, ids, { message: "oi", timeoutMs: 20 }, { log });
+
+    expect(veredito).toEqual({ flag: false, level: "none", reason: null, falhou: true });
+    expect(warns.map((w) => w.msg)).toContain("jailbreak: classificador falhou — turno segue sem sinal");
+  });
+
   it("estouro de orçamento SOBE — a escolta do turno é quem faz a passagem", async () => {
     chamada.mockRejectedValue(new LlmBudgetExceededError());
     const { log } = logSpy();

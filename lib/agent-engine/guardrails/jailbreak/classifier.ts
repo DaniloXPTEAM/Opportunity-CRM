@@ -122,11 +122,22 @@ export function parseJailbreakClassification(text: string): JailbreakClassificat
  * `LlmBudgetExceededError` continua subindo: quem a espera é a escolta
  * `comHandoffSeOrcamentoAcabar`, que passa a conversa a uma pessoa.
  */
+/**
+ * TETO DE TEMPO da chamada do classificador.
+ *
+ * Sem ele, uma chamada que o provedor deixa pendurada segura o turno inteiro: medido em
+ * 17/11/2026, `jailbreak_detect` levou 143 s (devolvendo OK no fim) e a resposta ao cliente
+ * demorou ~3 min — o classificador é advisório e a resposta dele é uma linha de JSON, que
+ * normalmente volta em 0,5–2 s. Estourar o teto cai no MESMO degrade da falha do
+ * fornecedor (`falhou: true`, turno segue sem o sinal), nunca em bloqueio.
+ */
+export const JAILBREAK_TIMEOUT_MS = 10_000;
+
 export async function classifyJailbreak(
   db: pg.Pool,
   cfg: LlmEdgeConfig,
   ids: { tenantId: string; leadId?: string | null; jobId?: string },
-  args: { message: string; model?: string; llmOverride?: LlmResolveOverride },
+  args: { message: string; model?: string; llmOverride?: LlmResolveOverride; timeoutMs?: number },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<JailbreakClassification> {
   let call: Awaited<ReturnType<typeof runModelCall>>;
@@ -146,6 +157,7 @@ export async function classifyJailbreak(
         ...(args.model !== undefined ? { model: args.model } : {}),
         ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
         messages: [{ role: 'user', content: buildJailbreakMessage(args.message) }],
+        abortSignal: AbortSignal.timeout(args.timeoutMs ?? JAILBREAK_TIMEOUT_MS),
       },
       { registry: deps.registry, log: deps.log },
     );
