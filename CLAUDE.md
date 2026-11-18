@@ -584,3 +584,28 @@ Um staff engineer aprovaria? Se não, itera.
 
 **Primeira coisa amanhã:** ler os erros que o dono mandar, reproduzir lendo os logs (`C:/w/app-novo.log`, `C:/w/worker-novo.log`, WAHA no Docker) ANTES de mexer, e corrigir na causa. Lembrar: tudo em primeiro plano, tudo gratuito, descrever e perguntar antes de trazer algo do original.
 **Commits locais ainda NÃO enviados ao GitHub** (o terminal está logado como `opportunitydestinyai`, sem escrita no repo novo; o GitHub Desktop usa a conta certa). Enviar só com "sim".
+
+
+## FECHAMENTO — 17/11/2026 à noite: Ruby (áudio, bolhas, demora, segurança) e o que ficou provado
+
+**Estado ao encerrar:** app `:3000`, worker `:8787` (log SEMPRE novo: `C:/w/worker-novo-AAAAMMDD-HHMM.log`, nunca reescrever), WAHA `:3030` e Redis no ar; canal `WORKING`. Login do administrador: `rjdrones97@gmail.com`, senha PROVISÓRIA de 8 caracteres definida em 17/11 (a tela exige ≥ 8; trocar antes de cliente real; NÃO está gravada aqui). Ruby publicada = **v6** (cópia integral da v5, só com `split_messages=true` e `split_max_chars=400`; prompt de 259 caracteres, 22 ferramentas, modelo `gemini-3.1-flash-lite`, tudo igual). Commits locais ainda SEM push (terminal logado como `opportunitydestinyai`, sem escrita no repo; usar GitHub Desktop).
+
+**Corrigido hoje (cada um com teste e commit local):**
+- *Pedido de áudio por escrito* ("manda em áudio") recebe áudio (`decidirRespostaEmAudio` + `lerPedidoDeAudio` do original); "prefiro texto" vence. A etiqueta interna `[audio]` não vaza mais no texto (`marcador-de-midia.ts`).
+- *Áudio longo:* 1 áudio até 900 caracteres (~50 s); acima, até 3 áudios de ~30–36 s, sintetizados juntos (`dividirParaAudio`, `prepararRespostasEmAudio`, `aceitarEnvioDeAudios`). Medido: 443 caracteres = 30 s, 795 = 43,5 s (15–18 caracteres/s); gerar a voz leva ~17 s por 30 s de áudio (custo do modelo grátis). O prompt dos turnos que viram áudio ganhou o bloco "esta resposta vai sair como nota de voz" (antes só o caminho pago o recebia). Quando cai em texto por tamanho, agora há `warn` no log (antes era mudo).
+- *Bolhas:* acima do teto de 3 mensagens por turno, as bolhas vizinhas são AGRUPADAS com tamanho parelho (`agruparBalanceado` em `split-message.ts`); antes o resto todo ia para a última (87 + 108 + 1.049).
+- *Segurança (jailbreak):* teto de 15 s na chamada do classificador (uma chamada pendurada levou 143 s e a resposta demorou ~3 min); se estourar, o turno segue sem o sinal (é advisório, nunca bloqueia). Nada exagerado: manda só a última mensagem (263–433 tokens), mediana 1,3 s, 0 turnos bloqueados.
+- *Modelo econômico:* `gemini-2.5-flash-lite`, `gemini-2.5-flash` e `gemini-2.0-flash` estão APOSENTADOS no Google (404, testado com a chave); entram em `MODELOS_APOSENTADOS_NO_PROVEDOR` (`lib/ai/pontos/resolver.ts`) e nunca são escolhidos como econômico. Só `gemini-3.1-flash-lite` e `gemini-3.5-flash-lite` respondem. Lista precisa ser mantida: modelo aposentado novo = acrescentar lá.
+- *Reduções pedidas pelo dono:* pausa humana do canal 1–10 s (`channel_knobs.atraso_minimo_ms/atraso_maximo_ms`, era 5–30 s) e `INBOUND_DEBOUNCE_MS=3000` no `.env.local` (era 8000).
+
+**Por que a Ruby "ficou off às 22h":** a janela de RESPOSTA padrão é 7h–22h (fuso Fortaleza) e a mensagem das 22h14 foi adiada para 07h ("turno adiado — fora da janela anti-ban de envio"). Abri a janela de resposta do canal para o dia inteiro (`resposta_start_hour=0`, `resposta_end_hour=24`, só RESPOSTA; disparo/campanha intactos) e adiantei o job. **Para ir ao ar com clientes reais, voltar a janela** (setar os dois campos para NULL).
+
+**Demora de resposta (medida, não resolvida):** o tempo vai em: evento→worker 3–12 s; janela de rajada (agora 3 s); transcrição de áudio só começa 8–12 s depois do recebimento (NÃO explicado: pode ser o worker de mídia); preparar o turno ~10 s (NÃO explicado); chamada principal ao Gemini 7–36 s (fila do plano grátis); síntese de voz ~17 s/30 s de áudio. O banco NÃO é o gargalo (ida e volta 55 ms). Próximo passo: ler o log novo de um turno inteiro e medir cada etapa.
+
+**Defeitos conhecidos que continuam:** (1) o modelo escreve respostas longas (1.244 caracteres, 9 parágrafos) apesar do bloco de voz e da regra "mensagens curtas" da plataforma — o prompt da Ruby tem só 259 caracteres e NENHUMA regra de tamanho; o dono disse que o prompt "fica como está", então mexer nele pede autorização; (2) `sentiment_classify` teve 11 erros antigos num modelo pago sem saldo (OpenRouter), hoje roda no Gemini.
+
+**Imagem e PDF:** o `send_message` do motor aceita `produto_codigo`, `material_id` e `imagem_url`, mas há 0 materiais cadastrados, 0 liberados à Ruby e NÃO achei tela para cadastrar material; catálogo de produtos não verificado.
+
+**Armadilhas desta sessão (não repetir):** trocar a senha de um usuário pela API de administração derruba as sessões abertas dele (sumiram as do navegador) — AVISAR antes; reiniciar o worker reescrevia o log (agora cada início cria arquivo novo); a checagem de tipos completa estoura 10 min nesta máquina — usar `tsconfig` reduzido e temporário (incluir `**/*.d.ts`); o shell recusa `python - <<'PY'` com aspas triplas — gravar o script em arquivo e rodar; o classificador de permissões bloqueou uma escrita no banco real até o dono autorizar por escrito — pedir antes.
+
+**Próximos passos, em ordem:** (a) o dono manda os erros que encontrar; (b) medir o turno inteiro no log novo (as 2 esperas não explicadas); (c) com autorização: regra de tamanho no prompt da Ruby e ligar a lista de espera da agenda; (d) pesquisar envio de e-mail gratuito; (e) ferramenta "ligar" / ponte WaCalls só com ordem expressa; (f) push dos commits pelo GitHub Desktop.
