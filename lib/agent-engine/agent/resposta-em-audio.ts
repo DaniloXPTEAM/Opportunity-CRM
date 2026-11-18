@@ -35,7 +35,31 @@ export function decidirRespostaEmAudio(clienteMandouAudio: boolean, pedido: Pedi
 export const MODELO_DE_VOZ = 'gemini-2.5-flash-preview-tts';
 export const VOZ_PADRAO = 'Kore';
 /** Acima disto o áudio fica longo demais para uma conversa: vai texto. */
-export const MAX_CHARS_PARA_AUDIO = 700;
+/**
+ * QUANTO CABE EM ÁUDIO — medido em 17/11/2026 com a voz Kore: 443 caracteres = 30 s de fala e
+ * 795 caracteres = 43,5 s (cerca de 15–18 caracteres por segundo).
+ *
+ * - até MAX_CHARS_PARA_AUDIO (~50 s) a resposta sai em UM áudio;
+ * - acima disso ela é dividida em áudios de até MAX_CHARS_POR_AUDIO (~30 s), no limite de
+ *   MAX_AUDIOS_POR_RESPOSTA — o que passar disso segue em texto, que é a saída de sempre.
+ */
+export const MAX_CHARS_PARA_AUDIO = 900;
+export const MAX_CHARS_POR_AUDIO = 450;
+export const MAX_AUDIOS_POR_RESPOSTA = 3;
+
+/**
+ * O bloco do prompt dos turnos que viram áudio pela síntese GRATUITA. É o do caminho pago
+ * (`BLOCO_DA_RESPOSTA_FALADA`, ~20 s), com o teto de acordo com o que o áudio daqui aceita.
+ */
+export const BLOCO_DA_RESPOSTA_FALADA_GRATUITA =
+  '## Esta resposta vai sair como NOTA DE VOZ\n' +
+  'O cliente vai OUVIR o que você mandar com send_message: a voz é gerada a partir do seu texto. ' +
+  'Escreva para ser ouvido, no idioma da conversa:\n' +
+  '- no máximo uns 45 segundos de fala (cerca de 700 caracteres), numa única mensagem — se passar, o sistema divide em áudios menores;\n' +
+  '- uma ideia por vez, com frases simples, como num áudio de WhatsApp;\n' +
+  '- sem listas, tópicos, emojis, siglas nem símbolos; números e preços escritos como se falam;\n' +
+  '- se fizer sentido, termine com UMA pergunta.\n' +
+  'Link, endereço longo ou dado para copiar não cabem em áudio: se precisar mandar, mande por escrito.';
 const BUCKET_DA_CONVERSA = 'whatsapp-media';
 const SAMPLE_RATE = 24000;
 
@@ -175,4 +199,105 @@ export async function aceitarEnvioDeAudio<A, R extends { kind: string }>(
   if (preparado === null) return null;
   const r = await enviar(preparado);
   return r.kind === 'sent' || r.kind === 'already_sent' || r.kind === 'queued' ? r : null;
+}
+
+
+/**
+ * Divide a fala em áudios de até `MAX_CHARS_POR_AUDIO`, cortando em fim de frase (e, se uma frase
+ * sozinha passa do teto, na vírgula ou no espaço mais próximo). Texto que cabe num áudio volta
+ * inteiro; o que exigiria mais de `MAX_AUDIOS_POR_RESPOSTA` áudios volta `null` (segue em texto).
+ */
+export function dividirParaAudio(fala: string): string[] | null {
+  const limpa = fala.trim();
+  if (limpa === '') return null;
+  if (limpa.length <= MAX_CHARS_PARA_AUDIO) return [limpa];
+
+  const frases = limpa.match(/[^.!?…]+[.!?…]+["')\]]*\s*|[^.!?…]+$/g) ?? [limpa];
+  const pedacos: string[] = [];
+  for (const frase of frases) {
+    let resto = frase.trim();
+    while (resto.length > MAX_CHARS_POR_AUDIO) {
+      const janela = resto.slice(0, MAX_CHARS_POR_AUDIO);
+      const corte = Math.max(janela.lastIndexOf(', '), janela.lastIndexOf(' '));
+      const ate = corte > MAX_CHARS_POR_AUDIO / 2 ? corte + 1 : MAX_CHARS_POR_AUDIO;
+      pedacos.push(resto.slice(0, ate).trim());
+      resto = resto.slice(ate).trim();
+    }
+    if (resto !== '') pedacos.push(resto);
+  }
+
+  const partes: string[] = [];
+  let atual = '';
+  for (const pedaco of pedacos) {
+    if (atual === '') atual = pedaco;
+    else if (atual.length + 1 + pedaco.length <= MAX_CHARS_POR_AUDIO) atual = `${atual} ${pedaco}`;
+    else {
+      partes.push(atual);
+      atual = pedaco;
+    }
+  }
+  if (atual !== '') partes.push(atual);
+  return partes.length <= MAX_AUDIOS_POR_RESPOSTA ? partes : null;
+}
+
+/**
+ * Como `prepararRespostaEmAudio`, mas devolve UM ou VÁRIOS áudios (resposta longa dividida). As
+ * partes são sintetizadas AO MESMO TEMPO — a síntese leva ~17 s para 30 s de fala, e em fila a
+ * resposta de 1 minuto levaria o dobro. Se qualquer parte falhar, devolve `null`: o texto inteiro
+ * segue como sempre (nunca metade em áudio e metade perdida).
+ */
+export async function prepararRespostasEmAudio(
+  deps: DepsDoAudio,
+  args: { tenantId: string; conversationId: string; texto: string },
+): Promise<Array<{ storagePath: string; mime: string }> | null> {
+  try {
+    const partes = dividirParaAudio(textoParaFala(args.texto));
+    if (partes === null) return null;
+
+    const org = await resolveOrgLlmConfig(deps.pool, deps.llmCfg, args.tenantId);
+    if (org.provider !== 'google' || !org.apiKey) return null;
+
+    const prontos = await Promise.all(
+      partes.map(async (parte) => {
+        const pcm = await sintetizarVoz({ apiKey: org.apiKey, texto: parte });
+        if (pcm === null || pcm.length === 0) return null;
+        const storagePath = `${args.tenantId}/${args.conversationId}/${randomUUID()}.wav`;
+        const { error } = await deps.supabase.storage
+          .from(BUCKET_DA_CONVERSA)
+          .upload(storagePath, pcmParaWav(pcm), { contentType: 'audio/wav' });
+        if (error) {
+          deps.log.warn('áudio da resposta não guardado (segue em texto)', { detalhe: error.message.slice(0, 120) });
+          return null;
+        }
+        return { storagePath, mime: 'audio/wav' };
+      }),
+    );
+    return prontos.every((p) => p !== null) ? (prontos as Array<{ storagePath: string; mime: string }>) : null;
+  } catch (err) {
+    deps.log.warn('não consegui gerar o áudio da resposta (segue em texto)', {
+      error: err instanceof Error ? err.name : 'unknown',
+    });
+    return null;
+  }
+}
+
+/**
+ * Envia os áudios em ordem. O PRIMEIRO precisa ser aceito pelo canal, senão devolve `null` e o
+ * texto segue. Se um áudio seguinte falhar, o turno conta como entregue (o cliente já ouviu o
+ * começo): reenviar tudo em texto repetiria o que ele acabou de ouvir.
+ */
+export async function aceitarEnvioDeAudios<A, R extends { kind: string }>(
+  preparados: readonly A[] | null,
+  enviar: (audio: A) => Promise<R>,
+  pausaEntreAudios: () => Promise<void> = async () => {},
+): Promise<R | null> {
+  if (preparados === null || preparados.length === 0) return null;
+  let ultimo: R | null = null;
+  for (const [i, audio] of preparados.entries()) {
+    if (i > 0) await pausaEntreAudios();
+    const aceito = await aceitarEnvioDeAudio(audio, enviar);
+    if (aceito === null) return ultimo;
+    ultimo = aceito;
+  }
+  return ultimo;
 }

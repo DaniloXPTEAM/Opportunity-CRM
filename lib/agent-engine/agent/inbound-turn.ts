@@ -99,7 +99,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
-import { aceitarEnvioDeAudio, decidirRespostaEmAudio, mensagemRecebidaFoiAudio, prepararRespostaEmAudio } from './resposta-em-audio';
+import { BLOCO_DA_RESPOSTA_FALADA_GRATUITA, aceitarEnvioDeAudios, decidirRespostaEmAudio, mensagemRecebidaFoiAudio, prepararRespostasEmAudio } from './resposta-em-audio';
 import {
   copiarFotoNoStorage,
   enviarComFotos,
@@ -3424,7 +3424,23 @@ async function executarTurnoDoAgente(
   // tudo numa nota de 35 segundos (medido numa instalação real em 03/11/2026, número
   // oficial). Por isso o `system` só é montado DEPOIS de a voz ser resolvida, e
   // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
-  const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
+  let blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
+  // O ÁUDIO GRATUITO (síntese do Gemini, `resposta-em-audio.ts`) responde quem mandou áudio
+  // ou pediu áudio por escrito — e só até MAX_CHARS_PARA_AUDIO: resposta maior cai para
+  // texto. Sem este bloco o modelo não sabia que o turno ia ser falado e escrevia 1.500
+  // caracteres em 9 parágrafos (medido em 17/11/2026): o áudio nunca saía. O bloco é o mesmo
+  // do caminho pago, e vem DEPOIS dos blocos de sempre, como lá.
+  if (blocoDaVoz === null && !preview && input.inboundMessageId !== undefined) {
+    const tipoDoInbound = await loadInboundTypeForJob(pool, {
+      tenantId,
+      conversationId: input.conversationId,
+      inboundMessageId: input.inboundMessageId,
+    }).catch(() => null);
+    const pedidoDeAudio = lerPedidoDeAudio(
+      textosDoClienteNoHistorico(openingContext?.context?.messages ?? [], currentInboundText),
+    );
+    if (decidirRespostaEmAudio(tipoDoInbound === 'audio', pedidoDeAudio)) blocoDaVoz = BLOCO_DA_RESPOSTA_FALADA_GRATUITA;
+  }
   if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
   // #4260, item 1: a passada de idioma vem DEPOIS da montagem — a ordem dos
   // blocos e o `join` daqui continuam os de antes, e em `pt-BR` cada bloco volta
@@ -5418,12 +5434,13 @@ async function executarTurnoDoAgente(
           const tentarRespostaEmAudio = async (texto: string): Promise<ChannelSendResult | null> =>
             preview || !(await respondeEmAudio())
               ? null
-              : aceitarEnvioDeAudio(
-                  await prepararRespostaEmAudio(
+              : aceitarEnvioDeAudios(
+                  await prepararRespostasEmAudio(
                     { pool, llmCfg: deps.llmCfg, supabase: deps.crmCfg.supabase, log: runLog },
                     { tenantId, conversationId: input.conversationId, texto },
                   ),
                   (audio) => enviar('', audio),
+                  () => sleep(1_500),
                 );
               // Saída configurável da prospecção (fora de prévia); ver saida-configuravel.ts.
               const saida = { db: pool, organizationId: tenantId, conversationId: preview ? null : input.conversationId, via: "inbound_turn" as const, mensagem: { jobId: preview ? "" : liveJob().id, seq: seq + 1 }, avisar: (m: string, c: Record<string, unknown>) => runLog.warn(m, c) };
