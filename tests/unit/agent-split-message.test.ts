@@ -141,3 +141,22 @@ describe("instrucaoDeBolhas", () => {
     expect(turno).not.toMatch(/Prefira várias mensagens curtas/);
   });
 });
+
+describe("acima do teto de bolhas: agrupa BALANCEADO (caso real de 17/11/2026)", () => {
+  it("9 parágrafos num teto de 3 bolhas não viram 87 + 108 + uma parede de texto", async () => {
+    const { splitForSend } = await import("@/lib/agent-engine/agent/split-message");
+    const paragrafos = [87, 108, 150, 140, 160, 130, 170, 120, 144].map((n, i) => `P${i + 1} ` + "a".repeat(n - 3));
+    const bolhas = splitForSend(paragrafos.join("\n\n"), true, 400, 3);
+    expect(bolhas).toHaveLength(3);
+    const tamanhos = bolhas.map((b) => b.length);
+    // parelho: a maior bolha não passa de ~1,3x a menor (antes: 1049 contra 87)
+    expect(Math.max(...tamanhos) / Math.min(...tamanhos)).toBeLessThan(1.3);
+    // nada do texto se perde, na ordem
+    expect(bolhas.join("\n\n")).toBe(paragrafos.join("\n\n"));
+  });
+
+  it("dentro do teto nada muda: um parágrafo por bolha", async () => {
+    const { splitForSend } = await import("@/lib/agent-engine/agent/split-message");
+    expect(splitForSend("um\n\ndois\n\ntrês", true, 400, 3)).toEqual(["um", "dois", "três"]);
+  });
+});

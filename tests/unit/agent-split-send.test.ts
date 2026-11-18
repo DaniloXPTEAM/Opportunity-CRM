@@ -81,7 +81,7 @@ describe("sendInBubbles", () => {
   // "bolhas incluídas") existe para barrar. O que passa do teto vai junto na última.
   const seteParagrafos = ["Opções:", "1. Azul", "2. Verde", "3. Preto", "4. Branco", "5. Rosa", "Qual prefere?"];
 
-  it("com maxBubbles 3, 7 parágrafos saem em 3 envios, o excedente junto na última, na ordem", async () => {
+  it("com maxBubbles 3, 7 parágrafos saem em 3 envios BALANCEADOS, na ordem e sem perder nada", async () => {
     const send = vi.fn(async (_b: string) => ({ kind: "sent", messageId: "m" }));
     await sendInBubbles(seteParagrafos.join("\n\n"), {
       enabled: true,
@@ -91,11 +91,14 @@ describe("sendInBubbles", () => {
       sleep: async () => undefined,
       jitter: () => 0,
     });
-    expect(send.mock.calls.map((c) => c[0])).toEqual([
-      "Opções:",
-      "1. Azul",
-      seteParagrafos.slice(2).join("\n\n"),
-    ]);
+    // Antes o resto todo ia para a última ("Opções:", "1. Azul" e uma parede de texto). Agora as bolhas
+    // vizinhas são agrupadas com tamanho parelho: nenhuma passa do dobro da menor.
+    const enviados = send.mock.calls.map((c) => c[0]);
+    expect(enviados).toHaveLength(3);
+    expect(enviados.join("\n\n")).toBe(seteParagrafos.join("\n\n"));
+    expect(Math.max(...enviados.map((b) => b.length))).toBeLessThanOrEqual(
+      2 * Math.min(...enviados.map((b) => b.length)),
+    );
   });
 
   it("com maxBubbles 1, sai uma bolha só com o texto inteiro", async () => {

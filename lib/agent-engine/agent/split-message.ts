@@ -221,13 +221,48 @@ export function splitForSend(
   if (!enabled) return [body];
   const bubbles = splitIntoBubbles(body, maxChars);
   if (bubbles.length <= maxBubbles || maxBubbles < 1) return bubbles;
-  // Teto de mensagens FÍSICAS do turno (MAX_SENDS_PER_TURN, "bolhas incluídas"): o que
-  // passa dele segue junto na última bolha, na ordem — nada do texto se perde.
-  // ponytail: a última bolha pode passar de maxChars; é o preço de não picotar além do teto.
-  return [
-    ...bubbles.slice(0, maxBubbles - 1),
-    bubbles.slice(maxBubbles - 1).join("\n\n"),
-  ];
+  // Teto de mensagens FÍSICAS do turno (MAX_SENDS_PER_TURN, "bolhas incluídas"): acima dele as
+  // bolhas vizinhas são AGRUPADAS, na ordem e com o tamanho o mais parelho possível — nada do texto
+  // se perde. Antes o resto todo ia para a última: 9 parágrafos viravam 87 + 108 + 1.049 caracteres
+  // (medido em 17/11/2026), duas bolhinhas e uma parede de texto.
+  return agruparBalanceado(bubbles, maxBubbles);
+}
+
+/**
+ * Junta bolhas vizinhas em `grupos` blocos (separados por linha em branco), minimizando o MAIOR
+ * bloco: busca binária no teto de caracteres e empacotamento guloso na ordem.
+ */
+export function agruparBalanceado(bubbles: readonly string[], grupos: number): string[] {
+  const SEPARADOR = 2; // "\n\n"
+  const cabe = (teto: number): string[][] | null => {
+    const saida: string[][] = [[]];
+    let tamanho = 0;
+    for (const b of bubbles) {
+      const atual = saida[saida.length - 1]!;
+      const novo = tamanho === 0 ? b.length : tamanho + SEPARADOR + b.length;
+      if (atual.length > 0 && novo > teto) {
+        saida.push([b]);
+        tamanho = b.length;
+      } else {
+        atual.push(b);
+        tamanho = novo;
+      }
+      if (saida.length > grupos) return null;
+    }
+    return saida;
+  };
+  let baixo = Math.max(...bubbles.map((b) => b.length));
+  let alto = bubbles.reduce((s, b) => s + b.length + SEPARADOR, 0);
+  let melhor = cabe(alto)!;
+  while (baixo < alto) {
+    const meio = Math.floor((baixo + alto) / 2);
+    const tentativa = cabe(meio);
+    if (tentativa !== null) {
+      melhor = tentativa;
+      alto = meio;
+    } else baixo = meio + 1;
+  }
+  return melhor.map((g) => g.join("\n\n"));
 }
 
 export async function sendInBubbles<T extends BubbleOutcome>(

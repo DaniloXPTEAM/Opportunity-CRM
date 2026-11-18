@@ -46,6 +46,8 @@ export const VOZ_PADRAO = 'Kore';
 export const MAX_CHARS_PARA_AUDIO = 900;
 export const MAX_CHARS_POR_AUDIO = 450;
 export const MAX_AUDIOS_POR_RESPOSTA = 3;
+/** Teto por áudio quando 450 não basta para caber em MAX_AUDIOS_POR_RESPOSTA (~36 s). */
+export const MAX_CHARS_POR_AUDIO_COM_FOLGA = 540;
 
 /**
  * O bloco do prompt dos turnos que viram áudio pela síntese GRATUITA. É o do caminho pago
@@ -226,18 +228,29 @@ export function dividirParaAudio(fala: string): string[] | null {
     if (resto !== '') pedacos.push(resto);
   }
 
+  // Primeiro com o teto de ~30 s; se as frases não fecham em MAX_AUDIOS_POR_RESPOSTA, com folga (~36 s).
+  // Medido em 17/11/2026: 1.248 caracteres (cabem em 3 áudios) davam 4 pelo empacotamento rígido e
+  // a resposta caía em TEXTO sem aviso.
+  for (const teto of [MAX_CHARS_POR_AUDIO, MAX_CHARS_POR_AUDIO_COM_FOLGA]) {
+    const partes = empacotar(pedacos, teto);
+    if (partes.length <= MAX_AUDIOS_POR_RESPOSTA) return partes;
+  }
+  return null;
+}
+
+function empacotar(pedacos: readonly string[], teto: number): string[] {
   const partes: string[] = [];
   let atual = '';
   for (const pedaco of pedacos) {
     if (atual === '') atual = pedaco;
-    else if (atual.length + 1 + pedaco.length <= MAX_CHARS_POR_AUDIO) atual = `${atual} ${pedaco}`;
+    else if (atual.length + 1 + pedaco.length <= teto) atual = `${atual} ${pedaco}`;
     else {
       partes.push(atual);
       atual = pedaco;
     }
   }
   if (atual !== '') partes.push(atual);
-  return partes.length <= MAX_AUDIOS_POR_RESPOSTA ? partes : null;
+  return partes;
 }
 
 /**
@@ -251,8 +264,13 @@ export async function prepararRespostasEmAudio(
   args: { tenantId: string; conversationId: string; texto: string },
 ): Promise<Array<{ storagePath: string; mime: string }> | null> {
   try {
-    const partes = dividirParaAudio(textoParaFala(args.texto));
-    if (partes === null) return null;
+    const fala = textoParaFala(args.texto);
+    const partes = dividirParaAudio(fala);
+    if (partes === null) {
+      // Antes esta saída era MUDA: a resposta virava texto e ninguém sabia por quê.
+      deps.log.warn('resposta longa demais para áudio (segue em texto)', { caracteres: fala.length });
+      return null;
+    }
 
     const org = await resolveOrgLlmConfig(deps.pool, deps.llmCfg, args.tenantId);
     if (org.provider !== 'google' || !org.apiKey) return null;

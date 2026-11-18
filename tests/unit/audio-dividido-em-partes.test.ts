@@ -91,3 +91,22 @@ describe("aceitarEnvioDeAudios", () => {
     expect(await aceitarEnvioDeAudios([], async () => ok(0))).toBeNull();
   });
 });
+
+describe("empacotamento com folga (caso real de 17/11/2026)", () => {
+  // 1.248 caracteres cabem em 3 áudios de ~30–36 s; o empacotamento rígido dava 4 e a resposta caía em TEXTO.
+  const frases = (n: number, tam: number) =>
+    Array.from({ length: n }, (_, i) => `Frase número ${i + 1} ${"x".repeat(tam)}.`).join(" ");
+
+  it("1.248 caracteres em frases de ~100 viram 3 áudios, não texto", () => {
+    const fala = frases(11, 108); // ~1.250 caracteres
+    expect(fala.length).toBeGreaterThan(1200);
+    const partes = dividirParaAudio(fala);
+    expect(partes).not.toBeNull();
+    expect(partes!.length).toBeLessThanOrEqual(3);
+    for (const p of partes!) expect(p.length).toBeLessThanOrEqual(540);
+  });
+
+  it("continua entregando null quando nem com folga cabe em 3 áudios", () => {
+    expect(dividirParaAudio(frases(30, 90))).toBeNull(); // ~3.000 caracteres
+  });
+});
